@@ -12,8 +12,11 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:prod": "drizzle-kit migrate --config drizzle.config.prod.ts",
     "db:create-app-user": "tsx --env-file=.env.local src/db/create-app-user.ts",
+    "db:create-app-user:prod": "tsx --env-file=.env.production.local src/db/create-app-user.ts",
     "db:rls": "tsx --env-file=.env.local src/db/apply-rls.ts",
+    "db:rls:prod": "tsx --env-file=.env.production.local src/db/apply-rls.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
     "test": "vitest run"

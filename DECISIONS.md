@@ -50,7 +50,32 @@ El alcance de M0 en `CLAUDE.md` pide "email + password y magic link, verificaci�
 ## Pendiente (no bloquea M0, pero no está cerrado)
 
 ### Deploy a Vercel: primer deploy promovió directo a producción
-El plan era probar en preview antes de producción, pero al ser el primer deploy del proyecto Vercel lo promovió directo a producción (comportamiento default cuando no hay un deploy de producción previo con el que comparar). Se probó de punta a punta ya en producción (`https://club-saas-xi.vercel.app`): login, branding por club, aislamiento cruzado (404) y club inexistente (404), todo contra la base real. `engines.node` quedó fijo en `"22.x"` (no `>=22.4.0`) para evitar el auto-upgrade silencioso de major que advierte Vercel. `NEXT_PUBLIC_APP_URL` de producción apunta al dominio real; `RESEND_API_KEY` sigue sin configurar (decisión explícita), así que los mails de verificación/magic link en producción solo quedan en los logs de la función hasta que se cargue una key real.
+El plan era probar en preview antes de producción, pero al ser el primer deploy del proyecto Vercel lo promovió directo a producción (comportamiento default cuando no hay un deploy de producción previo con el que comparar). Se probó de punta a punta ya en producción (`https://club-saas-xi.vercel.app`): login, branding por club, aislamiento cruzado (404) y club inexistente (404), todo contra la base real. `engines.node` quedó fijo en un valor exacto (no un rango abierto) para evitar el auto-upgrade silencioso de major que advierte Vercel — arrancó en `"22.x"` y después se subió a `"24.x"` (coincide con el Node local), confirmado por el log de build de Vercel ("Skipping build cache since Node.js version changed from 22.x to 24.x"). `NEXT_PUBLIC_APP_URL` de producción apunta al dominio real; `RESEND_API_KEY` sigue sin configurar (decisión explícita), así que los mails de verificación/magic link en producción solo quedan en los logs de la función hasta que se cargue una key real.
 
 ### `audit()` no está enganchado en ningún Server Action todavía
 `src/lib/audit/index.ts` existe y expone `createAuditor(tx, ctx)` → `audit(entity, entityId, action, diff)`, tal como pide el brief, pero ninguna action lo llama todavía (ni `registrarUsuario`, ni `reenviarVerificacion`, ni el resto). Hoy no se escribe ningún registro en `audit_log` en ningún flujo real. Falta engancharlo en cada Server Action que escribe datos, empezando por `registro/actions.ts`, antes de apoyarse en la regla no negociable 8 ("todo queda auditado").
+
+## Separación dev/producción
+
+### Región: Vercel alineado con Neon
+Neon corre en `sa-east-1` (São Paulo, AWS). Las funciones de Vercel corrían por default en `iad1` (Washington DC, US East) — confirmado empíricamente con el header `X-Vercel-Id` (`gru1::iad1::...`, edge en gru1 pero función ejecutando en iad1). Se agregó `vercel.json` con `"regions": ["gru1"]` (São Paulo, la región de Vercel más cercana a `sa-east-1`). Verificado post-deploy: `X-Vercel-Id` pasó a `gru1::gru1::...`, función y base ya en la misma región.
+
+### Bases separadas: un proyecto de Neon por ambiente
+Hasta ahora producción y desarrollo usaban el mismo proyecto de Neon (con usuarios de seed y password conocida `Cambiar123!`). Antes de cargar datos reales de un club, esto tiene que separarse. El patrón:
+
+- **`.env.local`** (git-ignored, como siempre): apunta al proyecto de Neon de **desarrollo**. Lo usan `next dev`, `db:seed`, `db:migrate`, `db:rls`, `db:create-app-user`, y `test` (el test de concurrencia corre contra dev).
+- **`.env.production.local`** (nuevo, git-ignored — ya cubierto por el patrón `.env*.local` existente en `.gitignore`): apunta al proyecto de Neon de **producción**. Se usa solo para las tareas administrativas puntuales de producción (migrar, aplicar `rls.sql`, crear `app_user`), nunca para levantar la app localmente ni para seed.
+- **Vercel**: la env var `DATABASE_URL` de **Production** apunta al Neon de producción; la de **Preview** sigue apuntando al Neon de **desarrollo** (así los preview deploys de ramas/PRs nunca tocan datos reales). `DATABASE_URL_OWNER` **no se carga en Vercel bajo ningún ambiente** — el owner (con `BYPASSRLS`) no tiene que existir nunca en un entorno con tráfico público; las migraciones se corren desde una máquina local contra `.env.production.local`.
+
+Nuevos scripts (mismo código, apuntan a otro archivo de env):
+- `db:migrate:prod` (usa `drizzle.config.prod.ts`, que carga `.env.production.local`)
+- `db:rls:prod`
+- `db:create-app-user:prod`
+- Deliberadamente **no existe** `db:seed:prod` — el seed nunca debe correr contra producción, ver el punto siguiente.
+
+### `seed.ts` se niega a correr fuera de dev
+`assertNotProduction()` corre primero que nada en `main()`, con dos chequeos independientes:
+1. Aborta si `NODE_ENV === 'production'`.
+2. Aborta si `SEED_ALLOWED_DB_HOST` no está seteada, o si el hostname real de `DATABASE_URL` no coincide con ella.
+
+`SEED_ALLOWED_DB_HOST` solo se define en `.env.local` (con el hostname exacto del Neon de desarrollo). Nunca se define en `.env.production.local` ni en Vercel — así que aunque alguien corra `seed.ts` a mano apuntando por error a producción, el script aborta antes de tocar una sola fila. Probado en vivo: los tres modos de falla (NODE_ENV=production, variable ausente, host equivocado) abortan correctamente antes de cualquier query; con la config correcta, pasa el chequeo sin problema.

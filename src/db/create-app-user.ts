@@ -11,7 +11,7 @@ import { Pool } from '@neondatabase/serverless'
  */
 async function main() {
   if (!process.env.DATABASE_URL_OWNER) {
-    throw new Error('DATABASE_URL_OWNER no está seteada (revisá .env.local)')
+    throw new Error('DATABASE_URL_OWNER no está seteada (revisá .env.local o .env.production.local)')
   }
 
   const password = process.env.APP_USER_PASSWORD ?? randomBytes(24).toString('base64url')
@@ -39,7 +39,7 @@ async function main() {
   appUrl.username = 'app_user'
   appUrl.password = password
 
-  console.log('app_user listo. Pegá esto como DATABASE_URL en .env.local:\n')
+  console.log('app_user listo. Pegá esto como DATABASE_URL (en .env.local, .env.production.local o Vercel):\n')
   console.log(appUrl.toString())
   console.log(`\n(mismo host que ${ownerUrl.hostname}; si tenés un endpoint -pooler, usalo acá para el runtime)`)
 }

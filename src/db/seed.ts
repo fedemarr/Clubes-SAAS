@@ -351,7 +351,44 @@ async function seedClub(cfg: ClubSeedConfig) {
   return { club, testUsers }
 }
 
+/**
+ * Nunca puede correr contra producción. Dos chequeos independientes:
+ * NODE_ENV (por si algún día esto se invoca desde algo que sí lo setea,
+ * como una función de Vercel) y el hostname real de DATABASE_URL contra
+ * un allowlist que solo existe en .env.local — nunca en
+ * .env.production.local ni en Vercel. Si falta la variable o no matchea,
+ * aborta. No hay forma de "confirmar y seguir": es todo o nada.
+ */
+function assertNotProduction() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('seed.ts: NODE_ENV=production. Abortado — el seed nunca corre en producción.')
+  }
+
+  const rawUrl = process.env.DATABASE_URL
+  if (!rawUrl) {
+    throw new Error('seed.ts: DATABASE_URL no está seteada.')
+  }
+
+  const allowedHost = process.env.SEED_ALLOWED_DB_HOST
+  if (!allowedHost) {
+    throw new Error(
+      'seed.ts: falta SEED_ALLOWED_DB_HOST. Sin esa variable el seed se niega a correr, ' +
+        'por seguridad (evita correrlo por accidente contra una base que no sea la de desarrollo).',
+    )
+  }
+
+  const actualHost = new URL(rawUrl).hostname
+  if (actualHost !== allowedHost) {
+    throw new Error(
+      `seed.ts: DATABASE_URL apunta a "${actualHost}", no a la base de desarrollo esperada ` +
+        `("${allowedHost}"). Abortado.`,
+    )
+  }
+}
+
 async function main() {
+  assertNotProduction()
+
   console.log('Sembrando clubes de prueba...\n')
 
   for (const cfg of CLUBES) {

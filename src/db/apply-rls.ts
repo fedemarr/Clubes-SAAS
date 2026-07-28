@@ -20,7 +20,7 @@ function withoutAppUserRole(sql: string): string {
 
 async function main() {
   if (!process.env.DATABASE_URL_OWNER) {
-    throw new Error('DATABASE_URL_OWNER no está seteada (revisá .env.local)')
+    throw new Error('DATABASE_URL_OWNER no está seteada (revisá .env.local o .env.production.local)')
   }
 
   const raw = readFileSync(RLS_PATH, 'utf8')
