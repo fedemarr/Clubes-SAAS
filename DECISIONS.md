@@ -49,5 +49,8 @@ El alcance de M0 en `CLAUDE.md` pide "email + password y magic link, verificaci�
 
 ## Pendiente (no bloquea M0, pero no está cerrado)
 
+### Deploy a Vercel: primer deploy promovió directo a producción
+El plan era probar en preview antes de producción, pero al ser el primer deploy del proyecto Vercel lo promovió directo a producción (comportamiento default cuando no hay un deploy de producción previo con el que comparar). Se probó de punta a punta ya en producción (`https://club-saas-xi.vercel.app`): login, branding por club, aislamiento cruzado (404) y club inexistente (404), todo contra la base real. `engines.node` quedó fijo en `"22.x"` (no `>=22.4.0`) para evitar el auto-upgrade silencioso de major que advierte Vercel. `NEXT_PUBLIC_APP_URL` de producción apunta al dominio real; `RESEND_API_KEY` sigue sin configurar (decisión explícita), así que los mails de verificación/magic link en producción solo quedan en los logs de la función hasta que se cargue una key real.
+
 ### `audit()` no está enganchado en ningún Server Action todavía
 `src/lib/audit/index.ts` existe y expone `createAuditor(tx, ctx)` → `audit(entity, entityId, action, diff)`, tal como pide el brief, pero ninguna action lo llama todavía (ni `registrarUsuario`, ni `reenviarVerificacion`, ni el resto). Hoy no se escribe ningún registro en `audit_log` en ningún flujo real. Falta engancharlo en cada Server Action que escribe datos, empezando por `registro/actions.ts`, antes de apoyarse en la regla no negociable 8 ("todo queda auditado").
