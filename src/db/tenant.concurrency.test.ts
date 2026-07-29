@@ -35,10 +35,10 @@ describe('withTenant — aislamiento bajo concurrencia real', () => {
     const [losCedrosId, demoFcId] = await Promise.all([getClubId('los-cedros'), getClubId('demo-fc')])
 
     async function readTeamClubIds(clubId: string, delayMs: number) {
-      return withTenant(clubId, async (tx) => {
+      return withTenant(clubId, async ({ tx }) => {
         await delay(delayMs)
         const rows = await tx.select({ clubId: teams.clubId }).from(teams)
-        return rows.map((r) => r.clubId)
+        return rows.map((r: { clubId: string }) => r.clubId)
       })
     }
 

@@ -13,7 +13,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
-export function RegistroForm() {
+export function RegistroForm({ clubSlug }: { clubSlug?: string }) {
   const [done, setDone] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const {
@@ -24,7 +24,7 @@ export function RegistroForm() {
 
   async function onSubmit(values: FormValues) {
     setServerError(null)
-    const result = await registrarUsuario(values)
+    const result = await registrarUsuario({ ...values, clubSlug })
     if (!result.ok) {
       setServerError(result.error)
       return

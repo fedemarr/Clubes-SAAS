@@ -1,10 +1,11 @@
 'use server'
 
 import { hash } from 'bcryptjs'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db/client'
-import { users } from '@/db/schema'
+import { clubs, users } from '@/db/schema'
+import { withTenant } from '@/db/tenant'
 import { signEmailToken } from '@/lib/auth/tokens'
 import { sendMail } from '@/lib/notifications/mail'
 
@@ -13,6 +14,7 @@ export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+  clubSlug: z.string().optional(),
 })
 
 async function enviarVerificacion(userId: string, email: string) {
@@ -30,7 +32,7 @@ export async function registrarUsuario(input: unknown): Promise<ActionResult<{ e
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
   }
-  const { email, password } = parsed.data
+  const { email, password, clubSlug } = parsed.data
 
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1)
   if (existing) {
@@ -38,7 +40,25 @@ export async function registrarUsuario(input: unknown): Promise<ActionResult<{ e
   }
 
   const passwordHash = await hash(password, 12)
-  const [user] = await db.insert(users).values({ email, passwordHash }).returning()
+
+  // `users` es global (sin club_id), pero el alta siempre ocurre en el
+  // contexto de un club (viene de la URL: /registro?club=<slug>). Si se
+  // puede resolver ese club, el insert y su auditoría van atados a la
+  // misma transacción de withTenant(); si no hay club en la URL (o no
+  // existe), se crea igual pero sin fila de auditoría — no hay club_id
+  // con el cual escribirla (audit_log lo exige NOT NULL).
+  const club = clubSlug
+    ? (await db.select().from(clubs).where(and(eq(clubs.slug, clubSlug), isNull(clubs.deletedAt))).limit(1))[0]
+    : undefined
+
+  const user = club
+    ? await withTenant(club.id, async ({ tx, audit }) => {
+        const [row] = await tx.insert(users).values({ email, passwordHash }).returning()
+        if (row) await audit('users', row.id, 'create', { email: row.email, clubSlug: club.slug })
+        return row
+      })
+    : (await db.insert(users).values({ email, passwordHash }).returning())[0]
+
   if (!user) {
     return { ok: false, error: 'No se pudo crear la cuenta' }
   }

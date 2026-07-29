@@ -129,7 +129,7 @@ async function seedClub(cfg: ClubSeedConfig) {
 
   const testUsers: { email: string; role: string; password: string }[] = []
 
-  await withTenant(club.id, async (tx) => {
+  await withTenant(club.id, async ({ tx }) => {
     const seasonStart = `${cfg.sports[0]?.season ?? 2026}-01-01`
 
     type CategoryRow = { id: string; sport: string; birthYearFrom: number; birthYearTo: number }

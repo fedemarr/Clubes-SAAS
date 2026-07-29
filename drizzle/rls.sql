@@ -50,6 +50,7 @@ BEGIN
   RAISE EXCEPTION 'ledger_entries es append-only: usá un asiento de reversa';
 END $$;
 
+DROP TRIGGER IF EXISTS ledger_no_update ON ledger_entries;
 CREATE TRIGGER ledger_no_update
   BEFORE UPDATE OR DELETE ON ledger_entries
   FOR EACH ROW EXECUTE FUNCTION deny_ledger_mutation();
@@ -67,6 +68,101 @@ FROM accounts a
 LEFT JOIN ledger_entries e ON e.account_id = a.id
 WHERE a.deleted_at IS NULL
 GROUP BY a.id, a.club_id, a.holder_person_id;
+
+-- 6. Auditoría estructural — batch_id.
+--    Vive acá, no en schema.ts (ver DECISIONS.md): es infraestructura de
+--    auditoría, no dominio. Agrupa N filas de una misma operación masiva
+--    (ej. importación de padrón) para que la UI no muestre un muro de
+--    líneas sueltas.
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS batch_id uuid;
+CREATE INDEX IF NOT EXISTS audit_log_batch_idx ON audit_log (club_id, batch_id);
+
+-- 7. Trigger genérico de auditoría estructural: registra INSERT/UPDATE/
+--    DELETE de las tablas de dominio sin depender de que la app se
+--    acuerde de llamar a audit(). Lee el mismo app.current_club /
+--    app.current_actor / app.current_batch que setea withTenant() y que
+--    lee el audit() de la app (src/lib/audit/index.ts) — así una fila
+--    escrita a mano y las que genera este trigger quedan consistentes.
+--
+--    Excluidas a propósito: audit_log (recursión) y ledger_entries
+--    (ya es append-only, trigger propio en la sección 4).
+CREATE OR REPLACE FUNCTION audit_table_changes() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_diff jsonb;
+  v_action varchar(30);
+  v_entity_id uuid;
+  -- Columnas técnicas: nunca son "lo que cambió" desde el punto de vista
+  -- de negocio, se excluyen del diff en INSERT y en UPDATE.
+  v_technical_cols text[] := ARRAY['id', 'created_at', 'updated_at', 'deleted_at', 'club_id'];
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_action := 'create';
+    v_entity_id := NEW.id;
+    SELECT jsonb_object_agg(key, value)
+      INTO v_diff
+      FROM jsonb_each(to_jsonb(NEW))
+      WHERE key <> ALL (v_technical_cols);
+
+  ELSIF TG_OP = 'UPDATE' THEN
+    v_action := 'update';
+    v_entity_id := NEW.id;
+    SELECT jsonb_object_agg(n.key, n.value)
+      INTO v_diff
+      FROM jsonb_each(to_jsonb(NEW)) n
+      JOIN jsonb_each(to_jsonb(OLD)) o ON o.key = n.key
+      WHERE n.key <> ALL (v_technical_cols)
+        AND n.value IS DISTINCT FROM o.value;
+
+    IF v_diff IS NULL THEN
+      -- Nada cambió fuera de columnas técnicas (ej. un UPDATE que sólo
+      -- toca updated_at): no genera fila, para no meter ruido.
+      RETURN NEW;
+    END IF;
+
+  ELSE -- DELETE
+    v_action := 'delete';
+    v_entity_id := OLD.id;
+    v_diff := NULL; -- es un borrado: no hay diff positivo que mostrar.
+  END IF;
+
+  INSERT INTO audit_log (club_id, actor_user_id, ip, batch_id, entity, entity_id, action, diff, at)
+  VALUES (
+    current_club(),
+    (nullif(current_setting('app.current_actor', true), '')::jsonb ->> 'user_id')::uuid,
+    (nullif(current_setting('app.current_actor', true), '')::jsonb ->> 'ip'),
+    nullif(current_setting('app.current_batch', true), '')::uuid,
+    TG_TABLE_NAME,
+    v_entity_id,
+    v_action,
+    v_diff,
+    now()
+  );
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+-- 8. Aplicar el trigger a las tablas de dominio auditables. Mismo patrón
+--    que la sección 3 (DO $$ + EXECUTE format()), acá sobre una lista
+--    explícita en vez de un catálogo dinámico: no todas las tablas con
+--    club_id están acá (ej. teams, events, accounts quedan afuera por
+--    ahora, a criterio explícito del alcance actual).
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'persons', 'person_roles', 'relationships', 'memberships',
+    'fee_plans', 'charges', 'payments', 'documents'
+  ]
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS audit_row_change ON public.%I', t);
+    EXECUTE format(
+      'CREATE TRIGGER audit_row_change AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION audit_table_changes()',
+      t
+    );
+  END LOOP;
+END $$;
 
 -- ============================================================
 -- Uso desde la app (Drizzle):

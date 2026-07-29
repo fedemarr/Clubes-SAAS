@@ -35,7 +35,7 @@ export default auth(async function middleware(req) {
   if (userId) {
     // persons/person_roles tienen RLS forzado: la query tiene que ir dentro
     // de withTenant() (set_config), si no siempre devuelve cero filas.
-    const activePerson = await withTenant(club.id, async (tx) => {
+    const activePerson = await withTenant(club.id, async ({ tx }) => {
       const today = new Date().toISOString().slice(0, 10)
       const [row] = await tx
         .select({ id: persons.id })
