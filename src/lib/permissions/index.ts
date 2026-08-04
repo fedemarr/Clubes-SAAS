@@ -11,17 +11,23 @@ export type RoleKind = (typeof roleKind.enumValues)[number]
  * brief — se amplía a medida que cada módulo la necesite, sin rediseñar:
  * agregar un string a `Permission` y una entrada a ROLE_PERMISSIONS.
  */
-export type Permission = 'personas.ver' | 'personas.editar' | 'categorias.ver' | 'categorias.editar'
+export type Permission =
+  | 'personas.ver'
+  | 'personas.editar'
+  | 'categorias.ver'
+  | 'categorias.editar'
+  | 'calendario.ver'
+  | 'calendario.editar'
 
 export type Scope = { kind: 'club' } | { kind: 'team'; teamId: string }
 
 const ROLE_PERMISSIONS: Partial<Record<RoleKind, Permission[]>> = {
-  presidente: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar'],
-  secretaria: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar'],
-  tesorero: ['personas.ver', 'categorias.ver'],
-  coordinador: ['personas.ver', 'categorias.ver', 'categorias.editar'], // scope: su team
-  entrenador: ['personas.ver', 'categorias.ver', 'categorias.editar'], // scope: su team (plantel)
-  manager: ['personas.ver', 'categorias.ver'], // scope: su team
+  presidente: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar'],
+  secretaria: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar'],
+  tesorero: ['personas.ver', 'categorias.ver', 'calendario.ver'],
+  coordinador: ['personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar'], // scope: su team
+  entrenador: ['personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver'], // scope: su team (plantel)
+  manager: ['personas.ver', 'categorias.ver', 'calendario.ver'], // scope: su team
 }
 
 export class PermissionError extends Error {
@@ -36,6 +42,7 @@ export type PermissionContext = {
   personId: string
   userId: string
   roles: RoleKind[]
+  scopeTeamIds: string[]
 }
 
 /**
@@ -92,6 +99,7 @@ export async function requirePermission(
     personId: activeRoles[0].personId,
     userId,
     roles: activeRoles.map((r) => r.role),
+    scopeTeamIds: [...new Set(activeRoles.map((r) => r.scopeTeamId).filter((id): id is string => Boolean(id)))],
   }
 }
 

@@ -1,4 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
@@ -37,9 +38,9 @@ export default async function ClubLayout({
       <header
         style={{
           borderBottom: `4px solid var(--brand-primary)`,
-          padding: '1rem 2rem',
+          padding: '0.75rem 2rem',
           display: 'flex',
-          gap: '0.75rem',
+          gap: '1rem',
           alignItems: 'center',
         }}
       >
@@ -47,7 +48,13 @@ export default async function ClubLayout({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={club.logoUrl} alt="" width={32} height={32} />
         )}
-        <strong>{club.name}</strong>
+        <strong style={{ marginRight: '1rem' }}>{club.name}</strong>
+        <nav style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem' }}>
+          <Link href={`/${slug}/dashboard`}>Dashboard</Link>
+          <Link href={`/${slug}/personas`}>Personas</Link>
+          <Link href={`/${slug}/categorias`}>Categorías</Link>
+          <Link href={`/${slug}/calendario`}>Calendario</Link>
+        </nav>
       </header>
       <main style={{ padding: '2rem' }}>{children}</main>
     </div>

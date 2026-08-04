@@ -103,3 +103,30 @@ Los dos niveles escriben a la misma tabla `audit_log` y leen exactamente los mis
 **Verificación en vivo (ver historial de la sesión):** se creó una persona, se le agregó y actualizó un rol, y se creó y borró un vínculo `hermano_de` — sin llamar a `audit()` en ningún momento. Las 5 filas resultantes en `audit_log` (create de persons, create+update de person_roles, create+delete de relationships) tenían diffs correctos: el `create` de `persons` solo con columnas de negocio (sin `id`/`club_id`/`created_at`/etc.), el `update` de `person_roles` solo con `{"valid_to": "2026-12-31"}` (no la fila entera), y el `delete` de `relationships` con `diff: null`. `actor_user_id`, `ip` y `batch_id` viajaron correctamente en los casos donde se pasó `actor`/`batchId` a `withTenant`, y `null` donde no. Por separado, se probó `audit()` de nivel 1 llamado dos veces con los mismos parámetros: escribió una sola fila.
 
 `SEED_ALLOWED_DB_HOST` solo se define en `.env.local` (con el hostname exacto del Neon de desarrollo). Nunca se define en `.env.production.local` ni en Vercel — así que aunque alguien corra `seed.ts` a mano apuntando por error a producción, el script aborta antes de tocar una sola fila. Probado en vivo: los tres modos de falla (NODE_ENV=production, variable ausente, host equivocado) abortan correctamente antes de cualquier query; con la config correcta, pasa el chequeo sin problema.
+
+## M2 · Deportivo (calendario)
+
+### Recurrencia de entrenamientos: filas materializadas, no expandir on-the-fly
+
+Cuando un entrenamiento es recurrente (semanal), se materializan N filas en `events` (una por semana hasta `until`). Cada fila comparte un `meta.recurrence.seriesId` y es independiente: se puede editar o eliminar individualmente sin afectar al resto.
+
+Razón: `participations` es una tabla pivote por evento — la asistencia se toma por cada fila de `events`, no por serie. Materializar evita expandir la recurrencia cada vez que alguien abre un evento o la pantalla de asistencia, y permite que cada entrenamiento de la serie tenga su propio estado de asistencia.
+
+Límite: `RECURRENCIA_MAX_SEMANAS = 52`. Más allá se rechaza al crear.
+
+### `scopeTeamIds` en `PermissionContext`
+
+`requirePermission` ahora devuelve `scopeTeamIds: string[]`, derivado de los `person_role.scopeTeamId` del actor. La regla:
+
+- Array vacío → el actor tiene al menos un rol de alcance club (presidente, secretaria, tesorero) → ve todo del club.
+- Array con IDs → el actor solo tiene roles con scopeTeamId (manager, entrenador, coordinador) → solo ve y opera sobre los teams de ese alcance.
+
+Las páginas usan `ctx.scopeTeamIds` para filtrar datos y restringir acciones. Si un usuario team-scoped intenta acceder a un evento fuera de su scope, se devuelve `notFound()` (nunca 403).
+
+### Calendario: visibilidad por team-scope
+
+Las acciones de escritura (crear/actualizar/eliminar) validan el scopeTeamIds contra el teamId del evento. Un manager no puede crear un evento "del club" (sin categoría); eso requiere un rol club-wide. Un evento creado por comisión (teamId null) no es visible a managers/entrenadores.
+
+### Notificaciones de convocatoria (pendiente, M2.2)
+
+Se decidió construir una tabla `notifications` fuera de `schema.ts` (precedente: `email_tokens` mencionado en DECISIONS de M0) con un emisor que persiste y loguea. Los canales (WhatsApp, mail, push) se agregan en M5-M6. Esto fue confirmado en la decisión de diseño para M2.2 convocatoria.
