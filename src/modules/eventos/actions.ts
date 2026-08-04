@@ -1,17 +1,18 @@
 'use server'
 
-import { and, eq, isNull } from 'drizzle-orm'
-import { events } from '@/db/schema'
+import { and, eq, gte, inArray, isNull, or } from 'drizzle-orm'
+import { events, participations, teamMembers } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
-import { PermissionError, requirePermission } from '@/lib/permissions'
-import { eventoSchema, eventoSchemaPartial } from './schemas'
-import { construirFilasEvento } from './service'
+import { PermissionError, type Permission, requirePermission } from '@/lib/permissions'
+import { emitirNotificaciones } from '@/lib/notifications/emit'
+import { eventoSchema, eventoSchemaPartial, convocatoriaSchema } from './schemas'
+import { construirFilasEvento, resolverDestinatariosConvocatoria } from './service'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
 async function actorPermisoEvento(
   clubSlug: string,
-  permission: 'calendario.ver' | 'calendario.editar',
+  permission: Permission,
   teamId: string | null | undefined,
 ) {
   const scope = teamId ? ({ kind: 'team' as const, teamId }) : ({ kind: 'club' as const })
@@ -153,6 +154,89 @@ export async function eliminarEvento(clubSlug: string, id: string): Promise<Acti
       await audit('events', id, 'delete', { deletedAt: true })
 
       return { ok: true, data: null }
+    },
+    { userId: ctx.userId },
+  )
+}
+
+export async function publicarConvocatoria(
+  clubSlug: string,
+  input: unknown,
+): Promise<ActionResult<{ convocados: number; notificados: number }>> {
+  const parsed = convocatoriaSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  const { ctx, error } = await actorPermisoEvento(clubSlug, 'convocatoria.publicar', undefined)
+  if (!ctx) return { ok: false, error }
+
+  return withTenant(
+    ctx.clubId,
+    async ({ tx, audit }) => {
+      const [evento] = await tx
+        .select()
+        .from(events)
+        .where(and(eq(events.clubId, ctx.clubId), eq(events.id, parsed.data.eventId), isNull(events.deletedAt)))
+        .limit(1)
+      if (!evento) return { ok: false, error: 'No existe ese evento' }
+
+      if (!evento.teamId) {
+        return { ok: false, error: 'Los eventos sin categoría no se convocan.' }
+      }
+      if (ctx.scopeTeamIds.length > 0 && !ctx.scopeTeamIds.includes(evento.teamId)) {
+        return { ok: false, error: 'Ese evento no es de tu categoría.' }
+      }
+
+      const today = new Date().toISOString().slice(0, 10)
+      const enPlantel = await tx
+        .select({ personId: teamMembers.personId })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.clubId, ctx.clubId),
+            eq(teamMembers.teamId, evento.teamId),
+            inArray(teamMembers.personId, parsed.data.personIds),
+            or(isNull(teamMembers.validTo), gte(teamMembers.validTo, today)),
+          ),
+        )
+      if (enPlantel.length !== parsed.data.personIds.length) {
+        return { ok: false, error: 'Alguno de los seleccionados no forma parte del plantel de la categoría.' }
+      }
+
+      await tx
+        .insert(participations)
+        .values(
+          parsed.data.personIds.map((personId) => ({
+            clubId: ctx.clubId,
+            eventId: evento.id,
+            personId,
+          status: 'convocado' as const,
+          recordedBy: ctx.userId,
+          })),
+        )
+        .onConflictDoNothing()
+
+      const destinatarios = await resolverDestinatariosConvocatoria(tx, ctx.clubId, parsed.data.personIds)
+      const notificados = await emitirNotificaciones(
+        tx,
+        ctx.clubId,
+        destinatarios.map((userId) => ({
+          userId,
+          type: 'convocatoria.publicada',
+          title: `Convocatoria · ${evento.title}`,
+          body: `Fuiste convocado/a para ${evento.title}.`,
+          data: { eventId: evento.id, startsAt: evento.startsAt.toISOString() },
+        })),
+      )
+
+      // participations no tiene trigger de auditoría (ver DECISIONS.md): el
+      // audit() de nivel 1 es la única traza que queda de la convocatoria.
+      await audit('participations', null, 'custom', {
+        eventId: evento.id,
+        convocados: parsed.data.personIds.length,
+        notificados,
+      })
+
+      return { ok: true, data: { convocados: parsed.data.personIds.length, notificados } }
     },
     { userId: ctx.userId },
   )

@@ -1,3 +1,6 @@
+import { and, eq, inArray } from 'drizzle-orm'
+import type { Tx } from '@/db/tenant'
+import { persons, relationships } from '@/db/schema'
 import type { eventKind } from '@/db/schema'
 
 export const RECURRENCIA_MAX_SEMANAS = 52
@@ -62,4 +65,50 @@ export function construirFilasEvento(input: EventoDatos): EventoFilasResult {
   }))
 
   return { ok: true, filas }
+}
+
+/** Un menor de 18 años se considera según la fecha de hoy (regla de convocatoria del brief). */
+export function esMenor(bornOn: string | null, hoy: Date = new Date()): boolean {
+  if (!bornOn) return false
+  const nacimiento = new Date(bornOn)
+  const edad = hoy.getFullYear() - nacimiento.getFullYear()
+  const cumpleAniosEsteAnio = new Date(hoy.getFullYear(), nacimiento.getMonth(), nacimiento.getDate())
+  const edadActual = hoy >= cumpleAniosEsteAnio ? edad : edad - 1
+  return edadActual < 18
+}
+
+/**
+ * A quién le llega la convocatoria (regla del brief): los menores reciben
+ * el aviso a través de su tutor (vínculo `tutor_de`), nunca al menor;
+ * los mayores de 18 lo reciben ellos mismos. Devuelve userIds únicos
+ * (solo los que tienen usuario — el resto no puede ser notificado todavía).
+ */
+export async function resolverDestinatariosConvocatoria(tx: Tx, clubId: string, personIds: string[]): Promise<string[]> {
+  const hoy = new Date()
+  const personas = await tx
+    .select({ id: persons.id, bornOn: persons.bornOn, userId: persons.userId })
+    .from(persons)
+    .where(and(eq(persons.clubId, clubId), inArray(persons.id, personIds)))
+
+  const menores = personas.filter((p) => esMenor(p.bornOn, hoy))
+  const mayores = personas.filter((p) => !esMenor(p.bornOn, hoy))
+
+  const destinatarios = mayores.map((p) => p.userId).filter(Boolean) as string[]
+
+  if (menores.length > 0) {
+    const tutores = await tx
+      .select({ userId: persons.userId })
+      .from(relationships)
+      .innerJoin(persons, eq(persons.id, relationships.personId))
+      .where(
+        and(
+          eq(relationships.clubId, clubId),
+          eq(relationships.kind, 'tutor_de'),
+          inArray(relationships.relatedPersonId, menores.map((p) => p.id)),
+        ),
+      )
+    destinatarios.push(...tutores.map((t) => t.userId).filter((u): u is string => Boolean(u)))
+  }
+
+  return [...new Set(destinatarios)]
 }

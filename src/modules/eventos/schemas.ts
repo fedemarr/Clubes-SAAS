@@ -15,3 +15,10 @@ export const eventoSchema = z.object({
 export type EventoInput = z.infer<typeof eventoSchema>
 
 export const eventoSchemaPartial = eventoSchema.partial()
+
+export const convocatoriaSchema = z.object({
+  eventId: z.string().uuid(),
+  personIds: z.array(z.string().uuid()).min(1, 'Elegí al menos un jugador para convocar'),
+})
+
+export type ConvocatoriaInput = z.infer<typeof convocatoriaSchema>

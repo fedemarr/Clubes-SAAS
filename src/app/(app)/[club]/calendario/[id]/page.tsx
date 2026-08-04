@@ -51,6 +51,10 @@ export default async function EventoDetallePage({
     puedeEditar = null
   }
 
+  const puedeConvocar = evento.teamId
+    ? await checkPermission('convocatoria.publicar', { kind: 'team', teamId: evento.teamId }, slug)
+    : null
+
   const KIND_LABELS: Record<string, string> = {
     entrenamiento: 'Entrenamiento',
     partido: 'Partido',
@@ -102,6 +106,17 @@ export default async function EventoDetallePage({
           </>
         )}
       </dl>
+
+      {puedeConvocar && (
+        <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <Link
+            href={`/${slug}/calendario/${id}/convocatoria`}
+            style={{ padding: '0.4rem 0.8rem', border: '1px solid #d1d5db', borderRadius: 6 }}
+          >
+            Convocar jugadores
+          </Link>
+        </div>
+      )}
 
       {puedeEditar && (
         <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

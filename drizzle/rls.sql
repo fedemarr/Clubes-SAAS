@@ -175,3 +175,30 @@ END $$;
 -- El `true` final hace que el setting sea LOCAL a la transacción:
 -- se limpia solo y no se filtra a otro request del pool.
 -- ============================================================
+
+-- 9. Notificaciones. Vive acá y no en schema.ts a propósito (ver
+--    DECISIONS.md — M2.2): es la bandeja de entrada de eventos de dominio,
+--    no una tabla de negocio que la app manipule directamente. Se crea
+--    con IF NOT EXISTS porque, a diferencia de la sección 3, acá el
+--    catálogo dinámico de tablas con club_id ya no la encontró (no existía
+--    cuando se corrió rls.sql por primera vez).
+CREATE TABLE IF NOT EXISTS notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  user_id uuid NOT NULL REFERENCES users(id),
+  type varchar(40) NOT NULL,
+  title varchar(160) NOT NULL,
+  body text,
+  data jsonb,
+  read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON notifications TO app_user;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON notifications;
+CREATE POLICY tenant_isolation ON notifications
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE INDEX IF NOT EXISTS notifications_club_created_idx ON notifications (club_id, created_at);
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications (user_id, created_at);

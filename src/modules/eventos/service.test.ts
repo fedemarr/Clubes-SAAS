@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { expandirOcurrenciasSemana, construirFilasEvento, RECURRENCIA_MAX_SEMANAS } from './service'
+import { expandirOcurrenciasSemana, construirFilasEvento, RECURRENCIA_MAX_SEMANAS, esMenor } from './service'
 
 describe('expandirOcurrenciasSemana', () => {
   it('genera ocurrencias cada 7 días incluyendo desde y hasta', () => {
@@ -113,5 +113,33 @@ describe('construirFilasEvento', () => {
     if (!result.ok) {
       expect(result.error).toContain(String(RECURRENCIA_MAX_SEMANAS))
     }
+  })
+})
+
+describe('esMenor', () => {
+  const hoy = new Date('2026-08-04T12:00:00Z')
+
+  it('recién nacido es menor', () => {
+    expect(esMenor('2024-01-01', hoy)).toBe(true)
+  })
+
+  it('alguien de 17 con cumpleaños próximo es menor', () => {
+    expect(esMenor('2008-12-31', hoy)).toBe(true)
+  })
+
+  it('alguien que cumple 18 hoy ya no es menor', () => {
+    expect(esMenor('2008-08-04', hoy)).toBe(false)
+  })
+
+  it('alguien de 18 que cumple en diciembre todavía es menor', () => {
+    expect(esMenor('2008-12-31', hoy)).toBe(true)
+  })
+
+  it('mayor de 18 no es menor', () => {
+    expect(esMenor('2000-05-20', hoy)).toBe(false)
+  })
+
+  it('sin fecha de nacimiento no se considera menor', () => {
+    expect(esMenor(null, hoy)).toBe(false)
   })
 })

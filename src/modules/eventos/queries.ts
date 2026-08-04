@@ -1,6 +1,6 @@
-import { and, asc, eq, gte, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, isNull, or, sql } from 'drizzle-orm'
 import { withTenant } from '@/db/tenant'
-import { events, teams } from '@/db/schema'
+import { events, participations, persons, teams, teamMembers } from '@/db/schema'
 import type { eventKind } from '@/db/schema'
 
 export type FiltroEventos = {
@@ -88,5 +88,48 @@ export async function listarDeportes(clubId: string): Promise<string[]> {
       .from(teams)
       .where(and(eq(teams.clubId, clubId), isNull(teams.deletedAt)))
     return rows.map((r) => r.sport).sort()
+  })
+}
+
+/**
+ * Plantel vigente de la categoría del evento, con el estado actual de la
+ * participación de cada jugador en ese evento (si ya fue convocado). Devuelve
+ * null si el evento no existe o no tiene categoría (los eventos del club sin
+ * categoría no se convocan).
+ */
+export async function listarPlantelParaEvento(clubId: string, eventId: string) {
+  return withTenant(clubId, async ({ tx }) => {
+    const [evento] = await tx
+      .select({ teamId: events.teamId, title: events.title, startsAt: events.startsAt })
+      .from(events)
+      .where(and(eq(events.clubId, clubId), eq(events.id, eventId), isNull(events.deletedAt)))
+      .limit(1)
+    if (!evento || !evento.teamId) return null
+
+    const today = new Date().toISOString().slice(0, 10)
+    const plantel = await tx
+      .select({
+        personId: persons.id,
+        nombre: persons.firstName,
+        apellido: persons.lastName,
+        position: teamMembers.position,
+        estadoParticipacion: participations.status,
+      })
+      .from(teamMembers)
+      .innerJoin(persons, eq(persons.id, teamMembers.personId))
+      .leftJoin(
+        participations,
+        and(eq(participations.eventId, eventId), eq(participations.personId, teamMembers.personId)),
+      )
+      .where(
+        and(
+          eq(teamMembers.clubId, clubId),
+          eq(teamMembers.teamId, evento.teamId),
+          or(isNull(teamMembers.validTo), gte(teamMembers.validTo, today)),
+        ),
+      )
+      .orderBy(asc(persons.lastName), asc(persons.firstName))
+
+    return { evento, plantel }
   })
 }
