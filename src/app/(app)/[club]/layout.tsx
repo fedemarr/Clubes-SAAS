@@ -12,6 +12,7 @@ const NAV: { href: string; label: string }[] = [
   { href: '/personas', label: 'Personas' },
   { href: '/categorias', label: 'Categorías' },
   { href: '/calendario', label: 'Calendario' },
+  { href: '/cuotas', label: 'Cuotas' },
 ]
 
 export default async function ClubLayout({

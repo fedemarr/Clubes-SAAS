@@ -145,6 +145,14 @@ export const clubs = pgTable(
     }>(),
     /** Divisiones, posiciones, tipos de evento y estadísticas por deporte. */
     sportPack: jsonb('sport_pack').$type<Record<string, unknown>>(),
+    /** Configuración financiera del club (M3). El prorrateo de cuotas a
+     *  mitad de mes y el día de vencimiento son decisión de cada club. */
+    financeConfig: jsonb('finance_config')
+      .$type<{
+        prorrateoParcial?: 'prorratear' | 'completo' | 'no_cobrar'
+        vencimientoDia?: number
+      }>()
+      .default({ prorrateoParcial: 'prorratear', vencimientoDia: 10 }),
     timezone: varchar('timezone', { length: 60 })
       .notNull()
       .default('America/Argentina/Buenos_Aires'),

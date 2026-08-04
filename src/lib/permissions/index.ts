@@ -22,13 +22,15 @@ export type Permission =
   | 'convocatoria.publicar'
   | 'asistencia.ver'
   | 'asistencia.tomar'
+  | 'cuotas.ver'
+  | 'cuotas.emitir'
 
 export type Scope = { kind: 'club' } | { kind: 'team'; teamId: string }
 
 const ROLE_PERMISSIONS: Partial<Record<RoleKind, Permission[]>> = {
-  presidente: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'],
-  secretaria: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver'],
-  tesorero: ['personas.ver', 'categorias.ver', 'calendario.ver'],
+  presidente: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'cuotas.ver', 'cuotas.emitir'],
+  secretaria: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'cuotas.ver'],
+  tesorero: ['personas.ver', 'categorias.ver', 'calendario.ver', 'cuotas.ver', 'cuotas.emitir'],
   coordinador: ['personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
   entrenador: ['personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team (plantel)
   manager: ['personas.ver', 'categorias.ver', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team

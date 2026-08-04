@@ -1,0 +1,1 @@
+ALTER TABLE "clubs" ADD COLUMN "finance_config" jsonb DEFAULT '{"prorrateoParcial":"prorratear","vencimientoDia":10}'::jsonb;
