@@ -1,15 +1,19 @@
 'use server'
 
+import { createHash } from 'crypto'
 import { and, eq, isNull } from 'drizzle-orm'
 import { accounts, charges, ledgerEntries, payments, persons } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { requirePermission } from '@/lib/permissions'
-import { centsToDecimal, decimalToCents } from '@/lib/money'
+import { centsToDecimal, decimalToCents, formatARS } from '@/lib/money'
 import { emitirNotificaciones } from '@/lib/notifications/emit'
-import { registrarPagoSchema, revertirPagoSchema } from './schemas'
-import { estadoCargoDespuesDePago, imputarPagoFIFO } from './service'
+import { registrarPagoSchema, revertirPagoSchema, generarLinkPagoSchema, importarExtractoSchema } from './schemas'
+import { estadoCargoDespuesDePago, parsearExtractoCSV, proponerMatcheos } from './service'
+import type { MovimientoExtracto, PropuestaMatch } from './service'
+import { acreditarPagoEnLedger, acreditarPagoPendiente } from './acreditacion'
+import { crearPreferenciaPago } from './mercadopago'
 import { buscarCuentaParaCobrar, creditosPorCargo, deudaDeCuenta } from './queries'
-import type { Imputacion } from './service'
+import type { ResultadoLinkPago } from './mercadopago'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -44,7 +48,7 @@ export type Recibo = {
   holderApellido: string
   montoCents: number
   metodo: string
-  imputaciones: Imputacion[]
+  imputaciones: { chargeId: string; amountCents: number }[]
   sobranteCents: number
   pagadoFecha: Date
   cobradoPorNombre: string | null
@@ -65,79 +69,23 @@ export async function registrarPago(clubSlug: string, input: unknown): Promise<A
     const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
 
     const recibo = await withTenant(ctx.clubId, async ({ tx }) => {
+      const resultado = await acreditarPagoEnLedger(tx, ctx.clubId, {
+        accountId: parsed.data.accountId,
+        montoCents: parsed.data.montoCents,
+        metodo: parsed.data.metodo,
+        recordedBy: ctx.userId,
+      })
+
       const [cuenta] = await tx
         .select()
         .from(accounts)
-        .where(and(eq(accounts.clubId, ctx.clubId), eq(accounts.id, parsed.data.accountId), isNull(accounts.deletedAt)))
+        .where(and(eq(accounts.clubId, ctx.clubId), eq(accounts.id, parsed.data.accountId)))
         .limit(1)
-      if (!cuenta) throw new Error('No existe esa cuenta.')
-
       const [holder] = await tx
         .select()
         .from(persons)
-        .where(eq(persons.id, cuenta.holderPersonId))
+        .where(eq(persons.id, cuenta!.holderPersonId))
         .limit(1)
-      if (!holder) throw new Error('La cuenta no tiene titular.')
-
-      const abiertos = await deudaDeCuenta(ctx.clubId, cuenta.id)
-      const { imputaciones, sobranteCents } = imputarPagoFIFO(
-        abiertos.map((c) => ({ id: c.id, dueOn: c.dueOn, saldoCents: c.saldoCents })),
-        parsed.data.montoCents,
-      )
-
-      const [pago] = await tx
-        .insert(payments)
-        .values({
-          clubId: ctx.clubId,
-          accountId: cuenta.id,
-          method: parsed.data.metodo,
-          amount: centsToDecimal(parsed.data.montoCents),
-          paidAt: new Date(),
-          status: 'acreditado',
-          recordedBy: ctx.userId,
-        })
-        .returning()
-      if (!pago) throw new Error('No se pudo registrar el pago.')
-
-      const pagadoAntes = await creditosPorCargo(
-        tx,
-        ctx.clubId,
-        abiertos.map((c) => c.id),
-      )
-
-      for (const imp of imputaciones) {
-        await tx.insert(ledgerEntries).values({
-          clubId: ctx.clubId,
-          accountId: cuenta.id,
-          direction: 'credito',
-          amount: centsToDecimal(imp.amountCents),
-          chargeId: imp.chargeId,
-          paymentId: pago.id,
-          memo: `Pago ${parsed.data.metodo}`,
-        })
-      }
-      if (sobranteCents > 0) {
-        await tx.insert(ledgerEntries).values({
-          clubId: ctx.clubId,
-          accountId: cuenta.id,
-          direction: 'credito',
-          amount: centsToDecimal(sobranteCents),
-          paymentId: pago.id,
-          memo: `Pago ${parsed.data.metodo} · excedente a cuenta`,
-        })
-      }
-
-      const porCargo = new Map(abiertos.map((c) => [c.id, c]))
-      for (const imp of imputaciones) {
-        const c = porCargo.get(imp.chargeId)
-        if (!c) continue
-        const pagado = (pagadoAntes.get(imp.chargeId) ?? 0) + imp.amountCents
-        const estado = estadoCargoDespuesDePago(c.amountCents, pagado)
-        if (estado !== 'pendiente') {
-          await tx.update(charges).set({ status: estado }).where(eq(charges.id, imp.chargeId))
-        }
-      }
-
       const [cobrador] = await tx
         .select()
         .from(persons)
@@ -147,30 +95,30 @@ export async function registrarPago(clubSlug: string, input: unknown): Promise<A
       await emitirNotificaciones(
         tx,
         ctx.clubId,
-        holder.userId
+        resultado.holderUserId
           ? [
               {
-                userId: holder.userId,
+                userId: resultado.holderUserId,
                 type: 'pago.acreditado',
                 title: 'Pago acreditado',
-                body: `Recibimos tu pago de $${centsToDecimal(parsed.data.montoCents)}. Recibo Nº ${pago.id.slice(-8).toUpperCase()}.`,
-                data: { pagoId: pago.id, accountId: cuenta.id },
+                body: `Recibimos tu pago de ${formatARS(parsed.data.montoCents)}. Recibo Nº ${resultado.pagoId.slice(-8).toUpperCase()}.`,
+                data: { pagoId: resultado.pagoId, accountId: parsed.data.accountId },
               },
             ]
           : [],
       )
 
       return {
-        pagoId: pago.id,
-        numero: pago.id.slice(-8).toUpperCase(),
-        cuentaLabel: cuenta.label,
-        holderNombre: holder.firstName,
-        holderApellido: holder.lastName,
+        pagoId: resultado.pagoId,
+        numero: resultado.pagoId.slice(-8).toUpperCase(),
+        cuentaLabel: cuenta?.label ?? null,
+        holderNombre: holder?.firstName ?? '',
+        holderApellido: holder?.lastName ?? '',
         montoCents: parsed.data.montoCents,
         metodo: parsed.data.metodo,
-        imputaciones,
-        sobranteCents,
-        pagadoFecha: pago.paidAt,
+        imputaciones: resultado.imputaciones,
+        sobranteCents: resultado.sobranteCents,
+        pagadoFecha: new Date(),
         cobradoPorNombre: cobrador?.firstName ?? null,
         cobradoPorApellido: cobrador?.lastName ?? null,
       } satisfies Recibo
@@ -239,6 +187,165 @@ export async function revertirPago(clubSlug: string, input: unknown): Promise<Ac
     }, { userId: ctx.userId })
 
     return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+export type LinkDePago = ResultadoLinkPago & { montoCents: number; periodo: string }
+
+/**
+ * Genera el link de pago de Mercado Pago para una cuenta (external_reference
+ * = clubId:accountId:periodo). El monto es la deuda total actual. En dev
+ * devuelve un link ficticio que permite probar el webhook.
+ */
+export async function generarLinkPago(clubSlug: string, input: unknown): Promise<ActionResult<LinkDePago>> {
+  const parsed = generarLinkPagoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
+    const periodo = parsed.data.periodo ?? new Date().toISOString().slice(0, 7)
+
+    const cargos = await deudaDeCuenta(ctx.clubId, parsed.data.accountId)
+    const montoCents = cargos.reduce((acc, c) => acc + c.saldoCents, 0)
+    if (montoCents <= 0) return { ok: false, error: 'La cuenta no tiene deuda pendiente.' }
+
+    const link = await crearPreferenciaPago(ctx.clubId, parsed.data.accountId, montoCents, periodo)
+    return { ok: true, data: { ...link, montoCents, periodo } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M4.3 · Conciliación de transferencias
+// ---------------------------------------------------------------------------
+
+export type MovimientoImportado = MovimientoExtracto & {
+  idx: number
+  pagoId: string
+  propuesta: PropuestaMatch
+}
+
+export type ResultadoImportacion = {
+  movimientos: MovimientoImportado[]
+  deudores: { accountId: string; label: string }[]
+  totalCents: number
+}
+
+function hashRow(fecha: string, montoCents: number, detalle: string, idx: number): string {
+  return createHash('sha256')
+    .update(`${fecha}|${montoCents}|${detalle}|${idx}`)
+    .digest('hex')
+    .slice(0, 20)
+}
+
+/**
+ * Importa un extracto CSV: propone matcheos contra las cuentas deudoras
+ * (monto exacto + nombre) y deja cada movimiento como pago pendiente sin
+ * cuenta (transferencia no identificada). Volver a importar el mismo
+ * extracto no duplica (externalRef = hash de la fila).
+ */
+export async function importarExtracto(clubSlug: string, input: unknown): Promise<ActionResult<ResultadoImportacion>> {
+  const parsed = importarExtractoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Extracto inválido' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.conciliar', { kind: 'club' }, clubSlug)
+
+    const movimientos = parsearExtractoCSV(parsed.data.texto, parsed.data.separador)
+    if (movimientos.length === 0) return { ok: false, error: 'No se detectaron ingresos en el extracto.' }
+
+    const deudoras = await buscarCuentaParaCobrar(ctx.clubId, '')
+    const deudores = deudoras.map((d) => ({
+      accountId: d.id,
+      holderApellido: d.holderApellido,
+      holderNombre: d.holderNombre,
+      saldoCents: d.balanceCents,
+    }))
+    const propuestas = proponerMatcheos(movimientos, deudores)
+
+    const movsImportados: MovimientoImportado[] = await withTenant(ctx.clubId, async ({ tx }) => {
+      const resultado: MovimientoImportado[] = []
+      for (let i = 0; i < movimientos.length; i++) {
+        const m = movimientos[i]!
+        const externalRef = `transfer-${hashRow(m.fecha, m.montoCents, m.detalle, i)}`
+        const [existente] = await tx
+          .select({ id: payments.id })
+          .from(payments)
+          .where(and(eq(payments.clubId, ctx.clubId), eq(payments.externalRef, externalRef)))
+          .limit(1)
+        let pagoId = existente?.id
+        if (!pagoId) {
+          const [pago] = await tx
+            .insert(payments)
+            .values({
+              clubId: ctx.clubId,
+              method: 'transferencia',
+              amount: centsToDecimal(m.montoCents),
+              paidAt: new Date(m.fecha + 'T12:00:00Z'),
+              status: 'pendiente',
+              externalRef,
+              rawPayload: { detalle: m.detalle, idx: i },
+            })
+            .returning()
+          pagoId = pago!.id
+        }
+        resultado.push({ ...m, idx: i, pagoId, propuesta: propuestas[i]! })
+      }
+      return resultado
+    })
+
+    return {
+      ok: true,
+      data: {
+        movimientos: movsImportados,
+        deudores: deudores.map((d) => ({
+          accountId: d.accountId,
+          label: `${d.holderApellido}, ${d.holderNombre}`,
+        })),
+        totalCents: movsImportados.reduce((acc, m) => acc + m.montoCents, 0),
+      },
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+/**
+ * Confirma la conciliación de un pago pendiente: le asigna la cuenta y lo
+ * acredita (créditos FIFO en el ledger, cargo marcado pagado/parcial).
+ */
+export async function confirmarConciliacion(clubSlug: string, input: unknown): Promise<ActionResult<{ pagoId: string }>> {
+  const accountId = typeof input === 'object' && input && 'accountId' in input ? String((input as { accountId: unknown }).accountId) : ''
+  const pagoId = typeof input === 'object' && input && 'pagoId' in input ? String((input as { pagoId: unknown }).pagoId) : ''
+  if (!accountId || !pagoId) return { ok: false, error: 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.conciliar', { kind: 'club' }, clubSlug)
+
+    const resultado = await withTenant(ctx.clubId, async ({ tx }) => {
+      const r = await acreditarPagoPendiente(tx, ctx.clubId, pagoId, accountId)
+      await emitirNotificaciones(
+        tx,
+        ctx.clubId,
+        r.holderUserId
+          ? [
+              {
+                userId: r.holderUserId,
+                type: 'pago.acreditado',
+                title: 'Transferencia acreditada',
+                body: `Acreditamos tu transferencia de ${formatARS(r.imputaciones.reduce((acc, i) => acc + i.amountCents, 0) + r.sobranteCents)}.`,
+                data: { pagoId, accountId },
+              },
+            ]
+          : [],
+      )
+      return r
+    }, { userId: ctx.userId })
+
+    return { ok: true, data: { pagoId: resultado.pagoId } }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
   }

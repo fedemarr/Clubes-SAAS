@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { estadoCargoDespuesDePago, imputarPagoFIFO, parsearPesosACentavos } from './service'
+import {
+  estadoCargoDespuesDePago,
+  imputarPagoFIFO,
+  normalizarFecha,
+  parsearExtractoCSV,
+  parsearMontoCelda,
+  parsearPesosACentavos,
+  proponerMatcheos,
+  similitudNombre,
+} from './service'
 
 const cargo = (id: string, dueOn: string, saldoCents: number) => ({ id, dueOn, saldoCents })
 
@@ -78,5 +87,80 @@ describe('parsearPesosACentavos', () => {
   it('ignora texto vacío o no numérico', () => {
     expect(parsearPesosACentavos('')).toBe(0)
     expect(parsearPesosACentavos('abc')).toBe(0)
+  })
+})
+
+describe('parsearMontoCelda', () => {
+  it('respeta el signo negativo', () => {
+    expect(parsearMontoCelda('-5000,00')).toBe(-500000)
+  })
+  it('ignora el signo positivo explícito', () => {
+    expect(parsearMontoCelda('+1234.56')).toBe(123456)
+  })
+})
+
+describe('normalizarFecha', () => {
+  it('normaliza dd/mm/yyyy', () => {
+    expect(normalizarFecha('05/08/2026')).toBe('2026-08-05')
+    expect(normalizarFecha('5/8/2026')).toBe('2026-08-05')
+  })
+  it('normaliza yyyy-mm-dd', () => {
+    expect(normalizarFecha('2026-08-05')).toBe('2026-08-05')
+  })
+  it('devuelve null sin fecha', () => {
+    expect(normalizarFecha('hola')).toBeNull()
+  })
+})
+
+describe('parsearExtractoCSV', () => {
+  const csv = [
+    'Fecha;Monto;Detalle',
+    '05/08/2026;65000,00;TRANSFERENCIA JUAN PEREZ',
+    '06/08/2026;-12000,00;PAGO SERVICIO',
+    '07/08/2026;52000.50;María González',
+    'sin datos;35000;RARO',
+    '',
+  ].join('\n')
+
+  it('extrae los ingresos y descarta encabezado, egresos y filas sin fecha', () => {
+    const m = parsearExtractoCSV(csv, ';')
+    expect(m).toHaveLength(2)
+    expect(m[0]).toEqual({ fecha: '2026-08-05', montoCents: 6500000, detalle: 'TRANSFERENCIA JUAN PEREZ' })
+    expect(m[1]).toEqual({ fecha: '2026-08-07', montoCents: 5200050, detalle: 'María González' })
+  })
+})
+
+describe('similitudNombre', () => {
+  it('detecta el apellido como token', () => {
+    expect(similitudNombre('TRANSFERENCIA JUAN PEREZ', 'Pérez', 'María')).toBe(1)
+  })
+  it('detecta el nombre', () => {
+    expect(similitudNombre('transferencia maria', 'Pérez', 'María')).toBe(0.8)
+  })
+  it('sin coincidencia da 0', () => {
+    expect(similitudNombre('transferencia genérica', 'Pérez', 'María')).toBe(0)
+  })
+})
+
+describe('proponerMatcheos', () => {
+  const deudores = [
+    { accountId: 'a1', holderApellido: 'Pérez', holderNombre: 'Juan', saldoCents: 6500000 },
+    { accountId: 'a2', holderApellido: 'Pérez', holderNombre: 'María', saldoCents: 6500000 },
+    { accountId: 'a3', holderApellido: 'González', holderNombre: 'María', saldoCents: 5200050 },
+  ]
+
+  it('monto exacto con un solo deudor → confianza alta', () => {
+    const movs = [{ fecha: '2026-08-05', montoCents: 5200050, detalle: 'whatever' }]
+    expect(proponerMatcheos(movs, deudores)).toEqual([{ accountId: 'a3', confianza: 'alta' }])
+  })
+
+  it('monto repetido elige por nombre → media', () => {
+    const movs = [{ fecha: '2026-08-05', montoCents: 6500000, detalle: 'transferencia JUAN' }]
+    expect(proponerMatcheos(movs, deudores)).toEqual([{ accountId: 'a1', confianza: 'media' }])
+  })
+
+  it('sin candidato → sin propuesta', () => {
+    const movs = [{ fecha: '2026-08-05', montoCents: 999, detalle: 'x' }]
+    expect(proponerMatcheos(movs, deudores)).toEqual([{ accountId: null, confianza: null }])
   })
 })

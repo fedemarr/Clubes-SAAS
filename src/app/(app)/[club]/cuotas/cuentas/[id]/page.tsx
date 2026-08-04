@@ -9,6 +9,7 @@ import { cargosAbiertosDeCuenta, movimientosDeCuenta, obtenerCuenta } from '@/mo
 import { saldoDesdeMovimientos } from '@/modules/cuotas/service'
 import { AnularCargoForm } from '@/modules/cuotas/components/AnularCargoForm'
 import { AjusteCuentaForm } from '@/modules/cuotas/components/AjusteCuentaForm'
+import { LinkDePagoForm } from '@/modules/cobranzas/components/LinkDePagoForm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
@@ -55,6 +56,7 @@ export default async function CuentaPage({
   }
 
   const puedeEmitir = await checkPermission('cuotas.emitir', { kind: 'club' }, slug)
+  const puedeCobrar = await checkPermission('cobranzas.registrar', { kind: 'club' }, slug)
 
   const [club] = await db
     .select()
@@ -166,6 +168,12 @@ export default async function CuentaPage({
           Saldo según movimientos: {formatARS(saldoCalculado)} (la vista de la base da {formatARS(cuenta.balanceCents)}).
         </p>
       </section>
+
+      {puedeCobrar && (
+        <section className="mt-8">
+          <LinkDePagoForm clubSlug={slug} accountId={id} />
+        </section>
+      )}
 
       {puedeEmitir && (
         <section className="mt-8 rounded-lg border p-4">

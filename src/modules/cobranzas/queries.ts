@@ -80,41 +80,43 @@ export type CargoConDeuda = {
   saldoCents: number
 }
 
-export async function deudaDeCuenta(clubId: string, accountId: string): Promise<CargoConDeuda[]> {
-  return withTenant(clubId, async ({ tx }) => {
-    const cargos = await tx
-      .select()
-      .from(charges)
-      .where(
-        and(
-          eq(charges.clubId, clubId),
-          eq(charges.accountId, accountId),
-          inArray(charges.status, ['pendiente', 'parcial', 'vencido']),
-        ),
-      )
-      .orderBy(asc(charges.dueOn))
-
-    const pagado = await creditosPorCargo(
-      tx,
-      clubId,
-      cargos.map((c) => c.id),
+export async function deudaDeCuentaEnTx(tx: Tx, clubId: string, accountId: string): Promise<CargoConDeuda[]> {
+  const cargos = await tx
+    .select()
+    .from(charges)
+    .where(
+      and(
+        eq(charges.clubId, clubId),
+        eq(charges.accountId, accountId),
+        inArray(charges.status, ['pendiente', 'parcial', 'vencido']),
+      ),
     )
-    return cargos
-      .map((c) => {
-        const amountCents = decimalToCents(c.amount)
-        const pagadoCents = pagado.get(c.id) ?? 0
-        return {
-          id: c.id,
-          period: c.period,
-          concept: c.concept,
-          dueOn: c.dueOn,
-          amountCents,
-          pagadoCents,
-          saldoCents: Math.max(0, amountCents - pagadoCents),
-        }
-      })
-      .filter((c) => c.saldoCents > 0)
-  })
+    .orderBy(asc(charges.dueOn))
+
+  const pagado = await creditosPorCargo(
+    tx,
+    clubId,
+    cargos.map((c) => c.id),
+  )
+  return cargos
+    .map((c) => {
+      const amountCents = decimalToCents(c.amount)
+      const pagadoCents = pagado.get(c.id) ?? 0
+      return {
+        id: c.id,
+        period: c.period,
+        concept: c.concept,
+        dueOn: c.dueOn,
+        amountCents,
+        pagadoCents,
+        saldoCents: Math.max(0, amountCents - pagadoCents),
+      }
+    })
+    .filter((c) => c.saldoCents > 0)
+}
+
+export async function deudaDeCuenta(clubId: string, accountId: string): Promise<CargoConDeuda[]> {
+  return withTenant(clubId, ({ tx }) => deudaDeCuentaEnTx(tx, clubId, accountId))
 }
 
 export type PagoCajaDia = {
@@ -152,5 +154,32 @@ export async function cajaDelDia(clubId: string, desde: Date, hasta: Date): Prom
       )
       .orderBy(desc(payments.paidAt))
     return rows.map((r) => ({ ...r, montoCents: decimalToCents(r.amount) }))
+  })
+}
+
+export type PagoPendiente = {
+  id: string
+  method: string
+  amount: string
+  paidAt: Date
+  externalRef: string | null
+  rawPayload: Record<string, unknown> | null
+}
+
+/** Bandeja de transferencias no identificadas: pagos sin cuenta asignada. */
+export async function listarPagosPendientes(clubId: string): Promise<PagoPendiente[]> {
+  return withTenant(clubId, async ({ tx }) => {
+    return tx
+      .select({
+        id: payments.id,
+        method: payments.method,
+        amount: payments.amount,
+        paidAt: payments.paidAt,
+        externalRef: payments.externalRef,
+        rawPayload: payments.rawPayload,
+      })
+      .from(payments)
+      .where(and(eq(payments.clubId, clubId), eq(payments.status, 'pendiente'), isNull(payments.accountId)))
+      .orderBy(desc(payments.paidAt))
   })
 }
