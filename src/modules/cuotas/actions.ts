@@ -326,6 +326,9 @@ export async function anularCargo(clubSlug: string, input: unknown): Promise<Act
         .limit(1)
       if (!cargo) throw new Error('No existe ese cargo.')
       if (cargo.status === 'anulado') throw new Error('Ese cargo ya está anulado.')
+      if (cargo.status === 'pagado' || cargo.status === 'parcial') {
+        throw new Error('Ese cargo ya tiene pagos. Revertí el pago antes de anularlo.')
+      }
 
       const [original] = await tx
         .select()

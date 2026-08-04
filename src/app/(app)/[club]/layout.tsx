@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
+import { checkPermission } from '@/lib/permissions'
 import { brandTokens } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,9 @@ export default async function ClubLayout({
     notFound()
   }
 
+  const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)
+  const nav = puedeCobranzas ? [...NAV, { href: '/cuotas/cobranzas', label: 'Cobranzas' }] : NAV
+
   const primary = club.branding?.primary ?? '#111827'
   const brandStyle = brandTokens(primary)
 
@@ -55,7 +59,7 @@ export default async function ClubLayout({
             {club.name}
           </Link>
           <nav className="flex items-center gap-1 text-sm">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <Link
                 key={item.href}
                 href={`/${slug}${item.href}`}
