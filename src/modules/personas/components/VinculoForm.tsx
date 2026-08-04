@@ -3,6 +3,16 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { buscarPersonasParaVinculo, crearVinculo, unificarCuentaCorriente } from '../actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 type Resultado = { id: string; nombre: string; docNumber: string | null }
 
@@ -54,23 +64,47 @@ export function VinculoForm({ clubSlug, personId }: { clubSlug: string; personId
 
   if (ofertaUnificar) {
     return (
-      <div style={{ border: '1px solid #ccc', padding: '0.75rem', marginTop: '0.5rem' }}>
+      <div className="mt-4 rounded-xl border p-4">
         {ofertaUnificar.cuentaTutorId ? (
           <>
-            <p>El tutor ya tiene una cuenta corriente familiar. ¿Unificar esta persona a esa cuenta?</p>
-            <button type="button" onClick={unificar}>
-              Sí, unificar
-            </button>{' '}
-            <button type="button" onClick={() => { setOfertaUnificar(null); router.refresh() }}>
-              No por ahora
-            </button>
+            <p className="text-sm">
+              El tutor ya tiene una cuenta corriente familiar. ¿Unificar esta persona a esa cuenta?
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Button type="button" size="sm" onClick={unificar}>
+                Sí, unificar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setOfertaUnificar(null)
+                  router.refresh()
+                }}
+              >
+                No por ahora
+              </Button>
+            </div>
           </>
         ) : (
           <>
-            <p>El tutor todavía no tiene cuenta corriente propia (se crea en el módulo de cuotas).</p>
-            <button type="button" onClick={() => { setOfertaUnificar(null); router.refresh() }}>
-              Entendido
-            </button>
+            <p className="text-sm">
+              El tutor todavía no tiene cuenta corriente propia (se crea en el módulo de cuotas).
+            </p>
+            <div className="mt-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setOfertaUnificar(null)
+                  router.refresh()
+                }}
+              >
+                Entendido
+              </Button>
+            </div>
           </>
         )}
       </div>
@@ -78,39 +112,67 @@ export function VinculoForm({ clubSlug, personId }: { clubSlug: string; personId
   }
 
   return (
-    <form onSubmit={onSubmit} style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem', maxWidth: 420 }}>
-      <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-        <option value="tutor_de">Es tutor de...</option>
-        <option value="conyuge_de">Es cónyuge de...</option>
-        <option value="hermano_de">Es hermano/a de...</option>
-      </select>
-      <input
-        type="search"
-        placeholder="Buscar persona por apellido o DNI"
-        value={q}
-        onChange={(e) => buscar(e.target.value)}
-      />
-      {resultados.length > 0 && !elegido && (
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, border: '1px solid #ddd' }}>
-          {resultados.map((r) => (
-            <li key={r.id}>
+    <form onSubmit={onSubmit} className="mt-4 grid max-w-md gap-3">
+      <div className="grid gap-1.5">
+        <Label htmlFor="vinculo-kind">Tipo de vínculo</Label>
+        <Select value={kind} onValueChange={(v) => setKind((v ?? 'tutor_de') as typeof kind)}>
+          <SelectTrigger id="vinculo-kind">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="tutor_de">Es tutor de…</SelectItem>
+            <SelectItem value="conyuge_de">Es cónyuge de…</SelectItem>
+            <SelectItem value="hermano_de">Es hermano/a de…</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-1.5">
+        <Label htmlFor="vinculo-busqueda">Buscar persona</Label>
+        <Input
+          id="vinculo-busqueda"
+          type="search"
+          placeholder="Apellido o DNI"
+          value={q}
+          onChange={(e) => buscar(e.target.value)}
+        />
+        {resultados.length > 0 && !elegido && (
+          <div className="overflow-hidden rounded-lg border bg-card">
+            {resultados.map((r) => (
               <button
+                key={r.id}
                 type="button"
                 onClick={() => {
                   setElegido(r)
                   setResultados([])
                   setQ(r.nombre)
                 }}
-                style={{ width: '100%', textAlign: 'left', padding: '0.35rem' }}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
               >
-                {r.nombre} {r.docNumber ? `· ${r.docNumber}` : ''}
+                <span className="font-medium">{r.nombre}</span>
+                {r.docNumber && <span className="text-xs text-muted-foreground">{r.docNumber}</span>}
               </button>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
       )}
-      {error && <p role="alert">{error}</p>}
-      <button type="submit">Crear vínculo</button>
+
+      <div className="flex gap-2">
+        <Button type="submit" size="sm">
+          Crear vínculo
+        </Button>
+        {elegido && (
+          <Button type="button" size="sm" variant="ghost" onClick={() => { setElegido(null); setQ('') }}>
+            Limpiar
+          </Button>
+        )}
+      </div>
     </form>
   )
 }

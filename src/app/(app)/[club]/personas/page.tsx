@@ -9,6 +9,8 @@ import { buscarPersonas } from '@/modules/personas/queries'
 import { busquedaSchema } from '@/modules/personas/schemas'
 import { checkPermission } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default async function PersonasPage({
@@ -40,27 +42,24 @@ export default async function PersonasPage({
 
   return (
     <main>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Padrón</h1>
-          <p className="text-sm text-muted-foreground">
-            {personas.length} {personas.length === 1 ? 'resultado' : 'resultados'}
-          </p>
-        </div>
-        <Button render={<Link href={`/${slug}/personas/nueva`} />}>Nueva persona</Button>
-      </div>
+      <PageHeader
+        title="Padrón"
+        description={`${personas.length} ${personas.length === 1 ? 'resultado' : 'resultados'}`}
+        actions={<Button render={<Link href={`/${slug}/personas/nueva`} />}>Nueva persona</Button>}
+      />
 
-      <div className="mt-4">
+      <div className="mt-6">
         <BuscadorPersonas categorias={categorias} valores={filtros} />
       </div>
 
       {personas.length === 0 ? (
-        <div className="mt-8 flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center">
-          <p className="text-sm font-medium">No se encontraron personas</p>
-          <p className="text-sm text-muted-foreground">Probá con otra búsqueda o cargá una nueva persona.</p>
-        </div>
+        <EmptyState
+          className="mt-8"
+          title="No se encontraron personas"
+          description="Probá con otra búsqueda o cargá una nueva persona."
+        />
       ) : (
-        <Table className="mt-4">
+        <Table className="mt-6">
           <TableHeader>
             <TableRow className="h-9">
               <TableHead>Nombre</TableHead>

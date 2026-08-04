@@ -8,6 +8,8 @@ import { listarPlanes } from '@/modules/cuotas/queries'
 import { planVigente } from '@/modules/cuotas/service'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 function formatDate(iso: string | null): string {
@@ -46,13 +48,11 @@ export default async function CuotasPage({ params }: { params: Promise<{ club: s
 
   return (
     <main>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Cuotas</h1>
-          <p className="text-sm text-muted-foreground">Planes de cuota por deporte, con historial de precios</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {puedeEmitir && (
+      <PageHeader
+        title="Cuotas"
+        description="Planes de cuota por deporte, con historial de precios"
+        actions={
+          puedeEmitir && (
             <>
               <Button render={<Link href={`/${slug}/cuotas/generar`} />}>Generar cuotas</Button>
               <Button render={<Link href={`/${slug}/cuotas/cuentas`} />} variant="outline">
@@ -68,17 +68,16 @@ export default async function CuotasPage({ params }: { params: Promise<{ club: s
                 Nuevo plan
               </Button>
             </>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {planes.length === 0 && (
-        <div className="mt-8 flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center">
-          <p className="text-sm font-medium">No hay planes de cuota todavía</p>
-          {puedeEmitir && (
-            <p className="text-sm text-muted-foreground">Creá el primer plan de cuota.</p>
-          )}
-        </div>
+        <EmptyState
+          className="mt-8"
+          title="No hay planes de cuota todavía"
+          description={puedeEmitir ? 'Creá el primer plan de cuota.' : undefined}
+        />
       )}
 
       {[...grupos.entries()].map(([sport, versions]) => {

@@ -1,25 +1,15 @@
-const COLORES: Record<string, { bg: string; fg: string; label: string }> = {
-  activo: { bg: '#DCFCE7', fg: '#166534', label: 'Activo' },
-  pendiente_aprobacion: { bg: '#FEF9C3', fg: '#854D0E', label: 'Pendiente' },
-  prospecto: { bg: '#E0E7FF', fg: '#3730A3', label: 'Prospecto' },
-  inactivo: { bg: '#F3F4F6', fg: '#374151', label: 'Inactivo' },
-  baja: { bg: '#FEE2E2', fg: '#991B1B', label: 'Baja' },
+const ESTADOS: Record<string, { className: string; label: string }> = {
+  activo: { className: 'bg-green-500/10 text-green-700', label: 'Activo' },
+  pendiente_aprobacion: { className: 'bg-amber-500/10 text-amber-700', label: 'Pendiente' },
+  prospecto: { className: 'bg-indigo-500/10 text-indigo-700', label: 'Prospecto' },
+  inactivo: { className: 'bg-muted text-muted-foreground', label: 'Inactivo' },
+  baja: { className: 'bg-red-500/10 text-red-700', label: 'Baja' },
 }
 
 export function EstadoBadge({ status }: { status: string }) {
-  const c = COLORES[status] ?? { bg: '#F3F4F6', fg: '#374151', label: status }
+  const c = ESTADOS[status] ?? { className: 'bg-muted text-muted-foreground', label: status }
   return (
-    <span
-      style={{
-        background: c.bg,
-        color: c.fg,
-        borderRadius: 999,
-        padding: '0.15rem 0.6rem',
-        fontSize: '0.75rem',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
+    <span className={`inline-flex h-5 w-fit items-center justify-center gap-1 whitespace-nowrap rounded-full px-2 text-xs font-medium ${c.className}`}>
       {c.label}
     </span>
   )

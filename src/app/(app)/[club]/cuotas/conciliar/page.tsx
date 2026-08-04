@@ -1,9 +1,11 @@
 import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { checkPermission } from '@/lib/permissions'
 import { decimalToCents } from '@/lib/money'
 import { buscarCuentaParaCobrar, listarPagosPendientes } from '@/modules/cobranzas/queries'
 import { ConciliadorForm } from '@/modules/cobranzas/components/ConciliadorForm'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/page-header'
 
 export default async function ConciliarPage({
   params,
@@ -28,14 +30,16 @@ export default async function ConciliarPage({
 
   return (
     <main>
-      <Button render={<Link href={`/${slug}/cuotas/cobranzas`} />} variant="ghost" className="mb-2 -ml-2">
-        ← Cobranzas
-      </Button>
-      <h1 className="text-xl font-semibold tracking-tight">Conciliación de transferencias</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Subí el extracto del banco y el sistema propone los matcheos por monto exacto y nombre del ordenante.
-        Confirmás con un clic y se acredita contra los cargos abiertos.
-      </p>
+      <PageHeader
+        title="Conciliación de transferencias"
+        description="Subí el extracto del banco y el sistema propone los matcheos por monto exacto y nombre del ordenante. Confirmás con un clic y se acredita contra los cargos abiertos."
+        actions={
+          <Button render={<Link href={`/${slug}/cuotas/cobranzas`} />} variant="ghost" size="sm">
+            <ArrowLeft data-icon="inline-start" />
+            Cobranzas
+          </Button>
+        }
+      />
 
       <ConciliadorForm
         clubSlug={slug}

@@ -7,6 +7,8 @@ import { formatARS } from '@/lib/money'
 import { listarCuentasConSaldo } from '@/modules/cuotas/queries'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 export default async function CuentasPage({ params }: { params: Promise<{ club: string }> }) {
@@ -30,26 +32,20 @@ export default async function CuentasPage({ params }: { params: Promise<{ club: 
 
   return (
     <main>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Cuenta corriente</h1>
-          <p className="text-sm text-muted-foreground">
-            Por grupo familiar · {cuentas.length} cuentas ·{' '}
-            <span className="font-medium text-destructive">{formatARS(totalDeuda)}</span> en deuda
-          </p>
-        </div>
-        <Button render={<Link href={`/${slug}/cuotas`} />} variant="ghost">
-          ← Cuotas
-        </Button>
-      </div>
+      <PageHeader
+        title="Cuenta corriente"
+        description={`Por grupo familiar · ${cuentas.length} cuentas · ${formatARS(totalDeuda)} en deuda`}
+        actions={
+          <Button render={<Link href={`/${slug}/cuotas`} />} variant="ghost" size="sm">
+            ← Cuotas
+          </Button>
+        }
+      />
 
-      {cuentas.length === 0 && (
-        <div className="mt-8 flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center">
-          <p className="text-sm font-medium">No hay cuentas corrientes todavía</p>
-        </div>
-      )}
-
-      <Table className="mt-6">
+      {cuentas.length === 0 ? (
+        <EmptyState className="mt-8" title="No hay cuentas corrientes todavía" />
+      ) : (
+        <Table className="mt-6">
         <TableBody>
           {cuentas.map((c) => (
             <TableRow key={c.id} className="h-11">
@@ -72,6 +68,7 @@ export default async function CuentasPage({ params }: { params: Promise<{ club: 
           ))}
         </TableBody>
       </Table>
+      )}
     </main>
   )
 }

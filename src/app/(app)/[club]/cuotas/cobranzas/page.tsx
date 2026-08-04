@@ -7,6 +7,8 @@ import { checkPermission } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import { cajaDelDia } from '@/modules/cobranzas/queries'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 function rangoDiaLocal(timezone: string, ahora = new Date()): { desde: Date; hasta: Date } {
@@ -67,32 +69,30 @@ export default async function CobranzasPage({
 
   return (
     <main>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Cobranzas</h1>
-          <p className="text-sm text-muted-foreground capitalize">{fechaHoy}</p>
-        </div>
-        <div className="flex gap-2">
-          {puedeRegistrar && (
-            <Button render={<Link href={`/${slug}/cuotas/cobrar`} />}>Cobrar</Button>
-          )}
-          {puedeConciliar && (
-            <Button render={<Link href={`/${slug}/cuotas/conciliar`} />} variant="outline">
-              Conciliar
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Cobranzas"
+        description={`${fechaHoy.charAt(0).toUpperCase()}${fechaHoy.slice(1)}`}
+        actions={
+          <>
+            {puedeRegistrar && (
+              <Button render={<Link href={`/${slug}/cuotas/cobrar`} />}>Cobrar</Button>
+            )}
+            {puedeConciliar && (
+              <Button render={<Link href={`/${slug}/cuotas/conciliar`} />} variant="outline">
+                Conciliar
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <section className="mt-8">
-        <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Caja del día · efectivo
         </h2>
 
         {cobrosHoy.length === 0 ? (
-          <div className="rounded-lg border border-dashed py-10 text-center">
-            <p className="text-sm text-muted-foreground">Todavía no se registró ningún cobro en efectivo hoy.</p>
-          </div>
+          <EmptyState title="Todavía no se registró ningún cobro en efectivo hoy." className="py-10" />
         ) : (
           <>
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">

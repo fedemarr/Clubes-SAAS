@@ -6,6 +6,8 @@ import { checkPermission } from '@/lib/permissions'
 import { listarEventos, listarCategoriasActivas, listarDeportes } from '@/modules/eventos/queries'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 const KIND_LABELS: Record<string, string> = {
@@ -81,17 +83,17 @@ export default async function CalendarioPage({
 
   return (
     <main>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Calendario</h1>
-          <p className="text-sm text-muted-foreground">Próximos eventos del club</p>
-        </div>
-        {puedeEditar && (
-          <Button render={<Link href={`/${slug}/calendario/nuevo`} />}>Nuevo evento</Button>
-        )}
-      </div>
+      <PageHeader
+        title="Calendario"
+        description="Próximos eventos del club"
+        actions={
+          puedeEditar && (
+            <Button render={<Link href={`/${slug}/calendario/nuevo`} />}>Nuevo evento</Button>
+          )
+        }
+      />
 
-      <form method="get" className="mt-4 flex flex-wrap items-center gap-2">
+      <form method="get" className="mt-6 flex flex-wrap items-center gap-2">
         <select
           name="tipo"
           defaultValue={sp.tipo ?? ''}
@@ -131,14 +133,11 @@ export default async function CalendarioPage({
       </form>
 
       {eventos.length === 0 && (
-        <div className="mt-8 flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center">
-          <p className="text-sm font-medium">No hay eventos próximos</p>
-          {puedeEditar && (
-            <p className="text-sm text-muted-foreground">
-              Creá el primero y la categoría va a aparecer acá.
-            </p>
-          )}
-        </div>
+        <EmptyState
+          className="mt-8"
+          title="No hay eventos próximos"
+          description={puedeEditar ? 'Creá el primero y la categoría va a aparecer acá.' : undefined}
+        />
       )}
 
       {[...eventosPorDia.entries()].map(([dia, eventosDelDia]) => (

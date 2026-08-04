@@ -1,14 +1,19 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { CalendarClock, FileText, Pencil } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 import { listarCategorias } from '@/modules/categorias/queries'
 import { EstadoBadge } from '@/modules/personas/components/EstadoBadge'
 import { RolForm } from '@/modules/personas/components/RolForm'
 import { VinculoForm } from '@/modules/personas/components/VinculoForm'
 import { obtenerFamilia, obtenerHistorialAuditoria, obtenerPersona, obtenerRoles } from '@/modules/personas/queries'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/empty-state'
+import { PageHeader } from '@/components/page-header'
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -33,7 +38,10 @@ export default async function FichaPersonaPage({
   const tabActivo: TabId = TABS.some((t) => t.id === tab) ? (tab as TabId) : 'datos'
 
   const ctx = await checkPermission('personas.ver', { kind: 'club' }, slug)
-  if (!ctx) return <main style={{ padding: '1rem' }}>No tenés permiso para ver esta ficha.</main>
+  if (!ctx) {
+    return <main className="px-4 py-6 text-muted-foreground">No tenés permiso para ver esta ficha.</main>
+  }
+  const puedeEditar = await checkPermission('personas.editar', { kind: 'club' }, slug)
 
   const [club] = await db.select().from(clubs).where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt))).limit(1)
   if (!club) return null
@@ -42,61 +50,79 @@ export default async function FichaPersonaPage({
   if (!persona) notFound()
 
   return (
-    <main style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <h1>
-          {persona.lastName}, {persona.firstName}
-        </h1>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <EstadoBadge status={persona.status} />
-          <Link href={`/${slug}/personas/${id}/editar`}>Editar</Link>
-        </div>
-      </div>
+    <main>
+      <PageHeader
+        title={`${persona.lastName}, ${persona.firstName}`}
+        description={`${persona.memberNumber ? `Socio #${persona.memberNumber} · ` : ''}${persona.docType} ${persona.docNumber ?? '—'}`}
+        actions={
+          <div className="flex items-center gap-2">
+            <EstadoBadge status={persona.status} />
+            {puedeEditar && (
+              <Button render={<Link href={`/${slug}/personas/${id}/editar`} />} size="sm">
+                <Pencil data-icon="inline-start" />
+                Editar
+              </Button>
+            )}
+          </div>
+        }
+      />
 
-      <nav style={{ display: 'flex', gap: '0.75rem', borderBottom: '1px solid #e5e7eb', margin: '1rem 0', flexWrap: 'wrap' }}>
+      <div className="mt-6 flex gap-1 overflow-x-auto border-b">
         {TABS.map((t) => (
           <Link
             key={t.id}
             href={`/${slug}/personas/${id}?tab=${t.id}`}
-            style={{
-              padding: '0.5rem 0',
-              borderBottom: t.id === tabActivo ? '2px solid #1F5C3F' : '2px solid transparent',
-              fontWeight: t.id === tabActivo ? 600 : 400,
-              color: 'inherit',
-              textDecoration: 'none',
-            }}
+            className={cn(
+              '-mb-px shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              t.id === tabActivo
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
           >
             {t.label}
           </Link>
         ))}
-      </nav>
+      </div>
 
-      {tabActivo === 'datos' && (
-        <dl>
-          <dt>Documento</dt>
-          <dd>
-            {persona.docType} {persona.docNumber ?? '—'}
-          </dd>
-          <dt>Fecha de nacimiento</dt>
-          <dd>{persona.bornOn ?? '—'}</dd>
-          <dt>Email</dt>
-          <dd>{persona.email ?? '—'}</dd>
-          <dt>Teléfono</dt>
-          <dd>{persona.phone ?? '—'}</dd>
-          <dt>N° de socio</dt>
-          <dd>{persona.memberNumber ?? '—'}</dd>
-        </dl>
-      )}
+      <div className="mt-6 max-w-2xl">
+        {tabActivo === 'datos' && (
+          <dl className="grid gap-x-8 gap-y-4 rounded-xl border bg-card p-5 shadow-xs sm:grid-cols-2">
+            {[
+              ['Fecha de nacimiento', persona.bornOn ?? '—'],
+              ['Email', persona.email ?? '—'],
+              ['Teléfono', persona.phone ?? '—'],
+              ['N° de socio', persona.memberNumber ? `#${persona.memberNumber}` : '—'],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-xs font-medium text-muted-foreground">{k}</dt>
+                <dd className="mt-0.5 text-sm font-medium">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
 
-      {tabActivo === 'familia' && <FamiliaTab clubSlug={slug} personId={id} />}
+        {tabActivo === 'familia' && <FamiliaTab clubSlug={slug} personId={id} />}
 
-      {tabActivo === 'deportivo' && <DeportivoTab clubId={club.id} clubSlug={slug} personId={id} />}
+        {tabActivo === 'deportivo' && <DeportivoTab clubId={club.id} clubSlug={slug} personId={id} />}
 
-      {tabActivo === 'financiero' && <p>Todavía no disponible — llega con el módulo de cuotas (M3).</p>}
+        {tabActivo === 'financiero' && (
+          <EmptyState
+            icon={CalendarClock}
+            title="Cuenta corriente en camino"
+            description="El estado de cuenta llega con el módulo de cuotas (M3)."
+          />
+        )}
 
-      {tabActivo === 'documentos' && <p>Todavía no disponible — llega con el módulo de documentos (M7).</p>}
+        {tabActivo === 'documentos' && (
+          <EmptyState
+            icon={FileText}
+            title="Documentación en camino"
+            description="Aptos médicos y documentos llegan con el módulo M7."
+          />
+        )}
 
-      {tabActivo === 'historial' && <HistorialTab clubId={club.id} personId={id} />}
+        {tabActivo === 'historial' && <HistorialTab clubId={club.id} personId={id} />}
+      </div>
     </main>
   )
 }
@@ -112,60 +138,85 @@ async function FamiliaTab({ clubSlug, personId }: { clubSlug: string; personId: 
   }
 
   return (
-    <div>
-      {familia.length === 0 && <p>Sin vínculos familiares cargados.</p>}
-      <ul style={{ listStyle: 'none', padding: 0 }}>
-        {familia.map((f) => (
-          <li key={`${f.id}-${f.direccion}`}>
-            {LABELS[f.kind]?.(f.direccion) ?? f.kind}{' '}
-            <Link href={`/${clubSlug}/personas/${f.otraPersonaId}`}>{f.otraPersonaNombre}</Link>
-          </li>
-        ))}
-      </ul>
+    <section>
+      <h2 className="text-sm font-semibold tracking-tight">Vínculos familiares</h2>
+      {familia.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Sin vínculos familiares cargados.</p>
+      ) : (
+        <ul className="mt-3 divide-y rounded-xl border bg-card shadow-xs">
+          {familia.map((f) => (
+            <li key={`${f.id}-${f.direccion}`} className="flex items-center justify-between px-4 py-3 text-sm">
+              <span className="text-muted-foreground">{LABELS[f.kind]?.(f.direccion) ?? f.kind}</span>
+              <Link href={`/${clubSlug}/personas/${f.otraPersonaId}`} className="font-medium hover:underline">
+                {f.otraPersonaNombre}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
       <VinculoForm clubSlug={clubSlug} personId={personId} />
-    </div>
+    </section>
   )
 }
 
-async function DeportivoTab({ clubId, clubSlug, personId }: { clubId: string; clubSlug: string; personId: string }) {
+async function DeportivoTab({
+  clubId,
+  clubSlug,
+  personId,
+}: {
+  clubId: string
+  clubSlug: string
+  personId: string
+}) {
   const [roles, categorias] = await Promise.all([
     obtenerRoles(clubId, personId),
     listarCategorias(clubId, { soloActivas: true }),
   ])
 
   return (
-    <div>
-      <h3>Roles</h3>
-      {roles.length === 0 && <p>Sin roles cargados.</p>}
-      <ul style={{ listStyle: 'none', padding: 0 }}>
-        {roles.map((r) => (
-          <li key={r.id}>
-            {r.role} {r.categoria ? `· ${r.categoria}` : ''} — desde {r.validFrom}
-            {r.validTo ? ` hasta ${r.validTo}` : ' (vigente)'}
-          </li>
-        ))}
-      </ul>
+    <section>
+      <h2 className="text-sm font-semibold tracking-tight">Roles</h2>
+      {roles.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Sin roles cargados.</p>
+      ) : (
+        <ul className="mt-3 divide-y rounded-xl border bg-card shadow-xs">
+          {roles.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+              <span className="font-medium">{r.role}</span>
+              <span className="text-xs text-muted-foreground">
+                {r.categoria ? `${r.categoria} · ` : ''}desde {r.validFrom}
+                {r.validTo ? ` hasta ${r.validTo}` : ' (vigente)'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <RolForm clubSlug={clubSlug} personId={personId} categorias={categorias} />
-    </div>
+    </section>
   )
 }
 
 async function HistorialTab({ clubId, personId }: { clubId: string; personId: string }) {
   const filas = (await obtenerHistorialAuditoria(clubId, personId)) as Record<string, unknown>[]
 
-  if (filas.length === 0) return <p>Sin cambios registrados todavía.</p>
+  if (filas.length === 0) {
+    return <p className="text-sm text-muted-foreground">Sin cambios registrados todavía.</p>
+  }
 
   return (
-    <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: '0.5rem' }}>
+    <ul className="divide-y rounded-xl border bg-card shadow-xs">
       {filas.map((f) => (
-        <li key={String(f.id)} style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>
-          <small>{String(f.at)}</small>
-          <br />
-          <strong>
-            {String(f.entity)} · {String(f.action)}
-          </strong>
-          {f.diff !== null && (
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>{JSON.stringify(f.diff, null, 2)}</pre>
+        <li key={String(f.id)} className="px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-medium">
+              {String(f.entity)} · {String(f.action)}
+            </span>
+            <span className="text-xs text-muted-foreground">{String(f.at)}</span>
+          </div>
+          {f.diff !== null && f.diff !== undefined && (
+            <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-muted/60 p-3 text-xs">
+              {JSON.stringify(f.diff, null, 2)}
+            </pre>
           )}
         </li>
       ))}

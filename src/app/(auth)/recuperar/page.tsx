@@ -1,14 +1,23 @@
 import Link from 'next/link'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 
 export default function RecuperarPage() {
   return (
-    <main style={{ padding: '3rem', fontFamily: 'sans-serif' }}>
-      <h1>Recuperar contraseña</h1>
-      <p>
-        Todavía no está implementado. Fuera del alcance de M0 (no lo pide el brief); si lo
-        necesitás ahora, avisá y lo priorizamos.
-      </p>
-      <Link href="/login">Volver a ingresar</Link>
-    </main>
+    <>
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Recuperar contraseña</CardTitle>
+          <CardDescription>
+            Todavía no está implementado. Si lo necesitás ahora, avisá y lo priorizamos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button render={<Link href="/login" />} variant="outline" className="w-full">
+            Volver a ingresar
+          </Button>
+        </CardContent>
+      </Card>
+    </>
   )
 }

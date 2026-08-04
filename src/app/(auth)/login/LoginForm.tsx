@@ -5,8 +5,12 @@ import { signIn } from 'next-auth/react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { Mail, ShieldAlert } from 'lucide-react'
 import { enviarMagicLink } from './actions'
 import { reenviarVerificacion } from '../registro/actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 const schema = z.object({
   email: z.string().email('Email inválido'),
@@ -67,27 +71,55 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: '0.75rem', maxWidth: 360 }}>
-      <label>
-        Email
-        <input type="email" {...register('email')} />
-        {errors.email && <p role="alert">{errors.email.message}</p>}
-      </label>
-      <label>
-        Contraseña
-        <input type="password" {...register('password')} />
-        {errors.password && <p role="alert">{errors.password.message}</p>}
-      </label>
-      {serverError && <p role="alert">{serverError}</p>}
-      {magicSent && <p>Si el email existe, te mandamos un link de acceso.</p>}
-      {verificationResent && <p>Si el email existe y no estaba verificado, te reenviamos el link.</p>}
-      <button type="submit" disabled={isSubmitting}>
-        Ingresar
-      </button>
-      <button type="button" onClick={onMagicLink}>
+    <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+      <div className="grid gap-1.5">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" type="email" autoComplete="email" placeholder="vos@club.com" {...register('email')} />
+        {errors.email && (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.email.message}
+          </p>
+        )}
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="password">Contraseña</Label>
+        <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
+        {errors.password && (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.password.message}
+          </p>
+        )}
+      </div>
+
+      {serverError && (
+        <p role="alert" className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <ShieldAlert className="size-4 shrink-0" />
+          {serverError}
+        </p>
+      )}
+      {magicSent && (
+        <p className="rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-700">
+          Si el email existe, te mandamos un link de acceso.
+        </p>
+      )}
+      {verificationResent && (
+        <p className="rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-700">
+          Si el email existe y no estaba verificado, te reenviamos el link.
+        </p>
+      )}
+
+      <Button type="submit" size="lg" disabled={isSubmitting} className="w-full">
+        {isSubmitting ? 'Ingresando…' : 'Ingresar'}
+      </Button>
+      <Button type="button" variant="outline" onClick={onMagicLink} className="w-full">
+        <Mail data-icon="inline-start" />
         Mandarme un link de acceso
-      </button>
-      <button type="button" onClick={onReenviarVerificacion}>
+      </Button>
+      <button
+        type="button"
+        onClick={onReenviarVerificacion}
+        className="text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
         Reenviar verificación de email
       </button>
     </form>

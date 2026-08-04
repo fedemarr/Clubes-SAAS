@@ -4,7 +4,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { ShieldAlert } from 'lucide-react'
 import { registrarUsuario } from './actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 const schema = z.object({
   email: z.string().email('Email inválido'),
@@ -33,25 +37,44 @@ export function RegistroForm({ clubSlug }: { clubSlug?: string }) {
   }
 
   if (done) {
-    return <p>Te mandamos un mail para confirmar tu cuenta. Revisá tu bandeja de entrada.</p>
+    return (
+      <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-700">
+        Te mandamos un mail para confirmar tu cuenta. Revisá tu bandeja de entrada.
+      </div>
+    )
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: '0.75rem', maxWidth: 360 }}>
-      <label>
-        Email
-        <input type="email" {...register('email')} />
-        {errors.email && <p role="alert">{errors.email.message}</p>}
-      </label>
-      <label>
-        Contraseña
-        <input type="password" {...register('password')} />
-        {errors.password && <p role="alert">{errors.password.message}</p>}
-      </label>
-      {serverError && <p role="alert">{serverError}</p>}
-      <button type="submit" disabled={isSubmitting}>
-        Crear cuenta
-      </button>
+    <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+      <div className="grid gap-1.5">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" type="email" autoComplete="email" placeholder="vos@club.com" {...register('email')} />
+        {errors.email && (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.email.message}
+          </p>
+        )}
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="password">Contraseña</Label>
+        <Input id="password" type="password" autoComplete="new-password" {...register('password')} />
+        {errors.password && (
+          <p role="alert" className="text-xs text-destructive">
+            {errors.password.message}
+          </p>
+        )}
+      </div>
+
+      {serverError && (
+        <p role="alert" className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <ShieldAlert className="size-4 shrink-0" />
+          {serverError}
+        </p>
+      )}
+
+      <Button type="submit" size="lg" disabled={isSubmitting} className="w-full">
+        {isSubmitting ? 'Creando…' : 'Crear cuenta'}
+      </Button>
     </form>
   )
 }

@@ -1,7 +1,9 @@
 import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { checkPermission } from '@/lib/permissions'
 import { PantallaCobrador } from '@/modules/cobranzas/components/PantallaCobrador'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/page-header'
 
 export default async function CobrarPage({
   params,
@@ -20,11 +22,20 @@ export default async function CobrarPage({
   }
 
   return (
-    <main>
-      <Button render={<Link href={`/${slug}/cuotas/cobranzas`} />} variant="ghost" className="mb-2 -ml-2">
-        ← Cobranzas
-      </Button>
-      <PantallaCobrador clubSlug={slug} />
+    <main className="pb-24 lg:pb-8">
+      <PageHeader
+        title="Cobrar"
+        description="Buscá la familia, registrá el pago y mandá el recibo."
+        actions={
+          <Button render={<Link href={`/${slug}/cuotas/cobranzas`} />} variant="ghost" size="sm">
+            <ArrowLeft data-icon="inline-start" />
+            Cobranzas
+          </Button>
+        }
+      />
+      <div className="mt-6">
+        <PantallaCobrador clubSlug={slug} />
+      </div>
     </main>
   )
 }

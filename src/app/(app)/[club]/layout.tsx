@@ -1,19 +1,29 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import {
+  CalendarDays,
+  HandCoins,
+  LayoutDashboard,
+  Trophy,
+  Users,
+  Wallet,
+} from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
 import { checkPermission } from '@/lib/permissions'
 import { brandTokens } from '@/lib/theme'
 import { cn } from '@/lib/utils'
+import { AppNav, type NavItem } from '@/components/app-nav'
+import { SignOutButton } from '@/components/sign-out-button'
 
-const NAV: { href: string; label: string }[] = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/personas', label: 'Personas' },
-  { href: '/categorias', label: 'Categorías' },
-  { href: '/calendario', label: 'Calendario' },
-  { href: '/cuotas', label: 'Cuotas' },
+const NAV: NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/personas', label: 'Personas', icon: Users },
+  { href: '/categorias', label: 'Categorías', icon: Trophy },
+  { href: '/calendario', label: 'Calendario', icon: CalendarDays },
+  { href: '/cuotas', label: 'Cuotas', icon: Wallet },
 ]
 
 export default async function ClubLayout({
@@ -42,40 +52,62 @@ export default async function ClubLayout({
   }
 
   const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)
-  const nav = puedeCobranzas ? [...NAV, { href: '/cuotas/cobranzas', label: 'Cobranzas' }] : NAV
+  const nav: NavItem[] = puedeCobranzas
+    ? [...NAV, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: HandCoins }]
+    : NAV
 
   const primary = club.branding?.primary ?? '#111827'
   const brandStyle = brandTokens(primary)
 
   return (
-    <div style={brandStyle}>
-      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
+    <div style={brandStyle} className="min-h-dvh bg-background">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+        <div className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
           {club.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={club.logoUrl} alt="" width={28} height={28} className="rounded-full" />
+            <img src={club.logoUrl} alt="" width={28} height={28} className="rounded-full ring-1 ring-foreground/10" />
           )}
-          <Link href={`/${slug}/dashboard`} className="text-sm font-semibold tracking-tight">
+          <Link href={`/${slug}/dashboard`} className="truncate text-sm font-semibold tracking-tight">
             {club.name}
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
-            {nav.map((item) => (
-              <Link
-                key={item.href}
-                href={`/${slug}${item.href}`}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="ml-auto" />
-          <span className="hidden text-xs text-muted-foreground sm:inline">{club.timezone}</span>
         </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          <AppNav clubSlug={slug} items={nav} vertical />
+        </div>
+
+        <div className="shrink-0 border-t p-3">
+          <div className="mb-2 flex items-center gap-2.5 px-3 py-1">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+              {session.user.email?.charAt(0).toUpperCase() ?? '?'}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-foreground">{session.user.email}</p>
+              <p className="text-[11px] text-muted-foreground">{club.timezone}</p>
+            </div>
+          </div>
+          <SignOutButton />
+        </div>
+      </aside>
+
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/90 px-4 backdrop-blur lg:hidden">
+        {club.logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={club.logoUrl} alt="" width={26} height={26} className="rounded-full ring-1 ring-foreground/10" />
+        )}
+        <Link href={`/${slug}/dashboard`} className={cn('text-sm font-semibold tracking-tight')}>
+          {club.name}
+        </Link>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+      <div className="sticky top-14 z-20 border-b bg-background/90 backdrop-blur lg:hidden">
+        <div className="px-3 py-1.5">
+          <AppNav clubSlug={slug} items={nav} />
+        </div>
+      </div>
+
+      <main className="lg:pl-60">
+        <div className="mx-auto max-w-5xl px-4 py-6 lg:px-8 lg:py-8">{children}</div>
+      </main>
     </div>
   )
 }
