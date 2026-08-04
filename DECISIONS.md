@@ -130,3 +130,13 @@ Las acciones de escritura (crear/actualizar/eliminar) validan el scopeTeamIds co
 ### Notificaciones de convocatoria (pendiente, M2.2)
 
 Se decidiÃ³ construir una tabla `notifications` fuera de `schema.ts` (precedente: `email_tokens` mencionado en DECISIONS de M0) con un emisor que persiste y loguea. Los canales (WhatsApp, mail, push) se agregan en M5-M6. Esto fue confirmado en la decisiÃ³n de diseÃ±o para M2.2 convocatoria.
+
+## Base de diseño (antes de M3)
+
+### shadcn/ui + tokens de marca desde clubs.branding
+
+Se instaló shadcn/ui sobre Tailwind v4 (el CLI usa la variante Base UI de los componentes: Button con prop ender en vez de sChild). Los tokens quedan en globals.css en formato oklch.
+
+La marca del club se inyecta en src/lib/theme.ts (randTokens): a partir de clubs.branding.primary (hex) se derivan --primary, --primary-foreground (contraste por luminancia relativa), --ring, --accent (tint al 10% con color-mix) y los vars de sidebar. Se aplican como CSS vars en el wrapper del layout (app)/[club], así el subárbol del tenant hereda la marca sin tocar código por club (regla 2). Los colores con significado (rojo=deuda/vencido, verde=al día) siguen siendo explícitos en cada componente, nunca se derivan de la marca.
+
+El resto de las páginas (formularios de M1/M2.1, pantallas mobile de asistencia/convocatoria) se migran de a una a medida que se tocan, sin romperlas: primero las listas visibles (calendario, padrón) y el dashboard.

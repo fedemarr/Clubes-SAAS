@@ -4,6 +4,9 @@ import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
 import { listarEventos, listarCategoriasActivas, listarDeportes } from '@/modules/eventos/queries'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 const KIND_LABELS: Record<string, string> = {
   entrenamiento: 'Entrenamiento',
@@ -32,6 +35,14 @@ function formatDate(iso: Date, tz: string): string {
   }).format(new Date(iso))
 }
 
+function formatDia(dia: string): string {
+  return new Date(dia + 'T12:00:00Z').toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+}
+
 export default async function CalendarioPage({
   params,
   searchParams,
@@ -44,7 +55,7 @@ export default async function CalendarioPage({
 
   const ctx = await checkPermission('calendario.ver', { kind: 'club' }, slug)
   if (!ctx) {
-    return <main style={{ padding: '1rem' }}>No tenés permiso para ver el calendario.</main>
+    return <main className="px-4 py-6 text-muted-foreground">No tenés permiso para ver el calendario.</main>
   }
 
   const puedeEditar = await checkPermission('calendario.editar', { kind: 'club' }, slug)
@@ -69,95 +80,102 @@ export default async function CalendarioPage({
   const eventosPorDia = Map.groupBy(eventos, (e) => new Date(e.startsAt).toISOString().slice(0, 10))
 
   return (
-    <main style={{ padding: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h1>Calendario</h1>
+    <main>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Calendario</h1>
+          <p className="text-sm text-muted-foreground">Próximos eventos del club</p>
+        </div>
         {puedeEditar && (
-          <Link href={`/${slug}/calendario/nuevo`} style={{ padding: '0.4rem 0.8rem', border: '1px solid #d1d5db', borderRadius: 6 }}>
-            + Nuevo evento
-          </Link>
+          <Button render={<Link href={`/${slug}/calendario/nuevo`} />}>Nuevo evento</Button>
         )}
       </div>
 
-      <form method="get" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
-        <select name="tipo" defaultValue={sp.tipo ?? ''}>
+      <form method="get" className="mt-4 flex flex-wrap items-center gap-2">
+        <select
+          name="tipo"
+          defaultValue={sp.tipo ?? ''}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        >
           <option value="">Todos los tipos</option>
           {Object.entries(KIND_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
-        <select name="deporte" defaultValue={sp.deporte ?? ''}>
+        <select
+          name="deporte"
+          defaultValue={sp.deporte ?? ''}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        >
           <option value="">Todos los deportes</option>
           {deportes.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>
-        <select name="categoria" defaultValue={sp.categoria ?? ''}>
+        <select
+          name="categoria"
+          defaultValue={sp.categoria ?? ''}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+        >
           <option value="">Todas las categorías</option>
           {categorias.map((c) => (
             <option key={c.id} value={c.id}>{c.sport} {c.label}</option>
           ))}
         </select>
-        <button type="submit">Filtrar</button>
+        <Button type="submit" variant="outline">Filtrar</Button>
         {(sp.deporte || sp.categoria || sp.tipo) && (
-          <Link href={`/${slug}/calendario`} style={{ padding: '0.4rem 0.6rem' }}>
-            Limpiar filtros
-          </Link>
+          <Button render={<Link href={`/${slug}/calendario`} />} variant="ghost">
+            Limpiar
+          </Button>
         )}
       </form>
 
       {eventos.length === 0 && (
-        <p style={{ color: '#6b7280' }}>No hay eventos próximos.</p>
+        <div className="mt-8 flex flex-col items-center gap-2 rounded-lg border border-dashed py-12 text-center">
+          <p className="text-sm font-medium">No hay eventos próximos</p>
+          {puedeEditar && (
+            <p className="text-sm text-muted-foreground">
+              Creá el primero y la categoría va a aparecer acá.
+            </p>
+          )}
+        </div>
       )}
 
       {[...eventosPorDia.entries()].map(([dia, eventosDelDia]) => (
-        <section key={dia} style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '0.9rem', color: '#6b7280', textTransform: 'capitalize', marginBottom: '0.4rem' }}>
-            {new Date(dia + 'T12:00:00Z').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+        <section key={dia} className="mt-6">
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {formatDia(dia)}
           </h2>
-          <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: '0.4rem' }}>
-            {eventosDelDia.map((e) => (
-              <li key={e.id}>
-                <Link
-                  href={`/${slug}/calendario/${e.id}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.6rem',
-                    padding: '0.6rem',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 8,
-                    color: 'inherit',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      color: '#fff',
-                      padding: '0.15rem 0.4rem',
-                      borderRadius: 4,
-                      backgroundColor: KIND_COLORS[e.kind] ?? '#6b7280',
-                    }}
-                  >
-                    {KIND_LABELS[e.kind] ?? e.kind}
-                  </span>
-                  <span style={{ flex: 1, fontWeight: 500 }}>{e.title}</span>
-                  {e.categoriaLabel && (
-                    <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                      {e.deporte} {e.categoriaLabel}
-                    </span>
-                  )}
-                  {e.opponent && (
-                    <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>vs {e.opponent}</span>
-                  )}
-                  <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+          <Table>
+            <TableBody>
+              {eventosDelDia.map((e) => (
+                <TableRow key={e.id} className="h-11">
+                  <TableCell className="w-40 whitespace-nowrap text-sm text-muted-foreground">
                     {formatDate(e.startsAt, club.timezone)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </TableCell>
+                  <TableCell className="w-32">
+                    <Badge
+                      variant="outline"
+                      style={{ borderColor: `${KIND_COLORS[e.kind] ?? '#6b7280'}55`, color: KIND_COLORS[e.kind] ?? '#6b7280' }}
+                    >
+                      {KIND_LABELS[e.kind] ?? e.kind}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/${slug}/calendario/${e.id}`} className="font-medium hover:underline">
+                      {e.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                    {e.categoriaLabel && `${e.deporte} ${e.categoriaLabel}`}
+                  </TableCell>
+                  <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                    {e.opponent && `vs ${e.opponent}`}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </section>
       ))}
     </main>

@@ -4,6 +4,15 @@ import { notFound, redirect } from 'next/navigation'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
+import { brandTokens } from '@/lib/theme'
+import { cn } from '@/lib/utils'
+
+const NAV: { href: string; label: string }[] = [
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/personas', label: 'Personas' },
+  { href: '/categorias', label: 'Categorías' },
+  { href: '/calendario', label: 'Calendario' },
+]
 
 export default async function ClubLayout({
   children,
@@ -31,32 +40,37 @@ export default async function ClubLayout({
   }
 
   const primary = club.branding?.primary ?? '#111827'
-  const brandStyle = { '--brand-primary': primary } as React.CSSProperties
+  const brandStyle = brandTokens(primary)
 
   return (
     <div style={brandStyle}>
-      <header
-        style={{
-          borderBottom: `4px solid var(--brand-primary)`,
-          padding: '0.75rem 2rem',
-          display: 'flex',
-          gap: '1rem',
-          alignItems: 'center',
-        }}
-      >
-        {club.logoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={club.logoUrl} alt="" width={32} height={32} />
-        )}
-        <strong style={{ marginRight: '1rem' }}>{club.name}</strong>
-        <nav style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem' }}>
-          <Link href={`/${slug}/dashboard`}>Dashboard</Link>
-          <Link href={`/${slug}/personas`}>Personas</Link>
-          <Link href={`/${slug}/categorias`}>Categorías</Link>
-          <Link href={`/${slug}/calendario`}>Calendario</Link>
-        </nav>
+      <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
+          {club.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={club.logoUrl} alt="" width={28} height={28} className="rounded-full" />
+          )}
+          <Link href={`/${slug}/dashboard`} className="text-sm font-semibold tracking-tight">
+            {club.name}
+          </Link>
+          <nav className="flex items-center gap-1 text-sm">
+            {NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={`/${slug}${item.href}`}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="ml-auto" />
+          <span className="hidden text-xs text-muted-foreground sm:inline">{club.timezone}</span>
+        </div>
       </header>
-      <main style={{ padding: '2rem' }}>{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
     </div>
   )
 }
