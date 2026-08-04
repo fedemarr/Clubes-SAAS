@@ -18,6 +18,14 @@ import {
 const SEED_PASSWORD = 'Cambiar123!'
 const FAMILY_KID_COUNTS = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]
 
+/** ~20% de las personas tienen apellido compuesto ("Fernández Alonso"), para probar ese caso en el ABM de M1. */
+function generarApellido(): string {
+  if (faker.datatype.boolean({ probability: 0.2 })) {
+    return `${faker.person.lastName()} ${faker.person.lastName()}`
+  }
+  return faker.person.lastName()
+}
+
 type CategoryConfig = {
   label: string
   birthYearFrom: number
@@ -193,7 +201,7 @@ async function seedClub(cfg: ClubSeedConfig) {
 
     for (const staff of staffDefs) {
       const firstName = faker.person.firstName()
-      const lastName = faker.person.lastName()
+      const lastName = generarApellido()
       const email = `${staff.emailSlug}@${cfg.slug}.test`
 
       const [person] = await tx
@@ -235,7 +243,7 @@ async function seedClub(cfg: ClubSeedConfig) {
     let familyIndex = 0
     for (const kidsInFamily of FAMILY_KID_COUNTS) {
       familyIndex += 1
-      const familyLastName = faker.person.lastName()
+      const familyLastName = generarApellido()
 
       const tutorFirstName = faker.person.firstName()
       const tutorEmail = `tutor${familyIndex}@${cfg.slug}.test`
