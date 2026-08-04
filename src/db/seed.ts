@@ -11,6 +11,7 @@ import {
   personRoles,
   persons,
   relationships,
+  teamMembers,
   teams,
   users,
 } from './schema'
@@ -317,6 +318,13 @@ async function seedClub(cfg: ClubSeedConfig) {
           personId: kid.id,
           role: 'jugador',
           scopeTeamId: category.id,
+          validFrom: seasonStart,
+        })
+
+        await tx.insert(teamMembers).values({
+          clubId: club.id,
+          teamId: category.id,
+          personId: kid.id,
           validFrom: seasonStart,
         })
 

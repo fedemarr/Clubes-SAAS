@@ -1,11 +1,11 @@
 'use server'
 
-import { and, eq, gte, inArray, isNull, or } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { events, participations, teamMembers } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { PermissionError, type Permission, requirePermission } from '@/lib/permissions'
 import { emitirNotificaciones } from '@/lib/notifications/emit'
-import { eventoSchema, eventoSchemaPartial, convocatoriaSchema } from './schemas'
+import { eventoSchema, eventoSchemaPartial, convocatoriaSchema, asistenciaSchema } from './schemas'
 import { construirFilasEvento, resolverDestinatariosConvocatoria } from './service'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -209,8 +209,8 @@ export async function publicarConvocatoria(
             clubId: ctx.clubId,
             eventId: evento.id,
             personId,
-          status: 'convocado' as const,
-          recordedBy: ctx.userId,
+            status: 'convocado' as const,
+            recordedBy: ctx.userId,
           })),
         )
         .onConflictDoNothing()
@@ -237,6 +237,87 @@ export async function publicarConvocatoria(
       })
 
       return { ok: true, data: { convocados: parsed.data.personIds.length, notificados } }
+    },
+    { userId: ctx.userId },
+  )
+}
+
+/**
+ * Guarda la asistencia de un lote de jugadores en un solo viaje (optimizado
+ * para pantalla mobile con mala señal). Hace upsert sobre participations:
+ * `convocado` (limpiar) y los estados de asistencia reales actualizan la fila,
+ * los jugadores marcados sin fila previa la crean. Idempotente: correr el
+ * mismo lote dos veces deja el mismo estado.
+ */
+export async function registrarAsistenciaLote(
+  clubSlug: string,
+  input: unknown,
+): Promise<ActionResult<{ guardados: number }>> {
+  const parsed = asistenciaSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  const { ctx, error } = await actorPermisoEvento(clubSlug, 'asistencia.tomar', undefined)
+  if (!ctx) return { ok: false, error }
+
+  return withTenant(
+    ctx.clubId,
+    async ({ tx, audit }) => {
+      const [evento] = await tx
+        .select()
+        .from(events)
+        .where(and(eq(events.clubId, ctx.clubId), eq(events.id, parsed.data.eventId), isNull(events.deletedAt)))
+        .limit(1)
+      if (!evento) return { ok: false, error: 'No existe ese evento' }
+
+      if (!evento.teamId) {
+        return { ok: false, error: 'Los eventos sin categoría no toman asistencia.' }
+      }
+      if (ctx.scopeTeamIds.length > 0 && !ctx.scopeTeamIds.includes(evento.teamId)) {
+        return { ok: false, error: 'Ese evento no es de tu categoría.' }
+      }
+
+      const today = new Date().toISOString().slice(0, 10)
+      const enPlantel = await tx
+        .select({ personId: teamMembers.personId })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.clubId, ctx.clubId),
+            eq(teamMembers.teamId, evento.teamId),
+            inArray(
+              teamMembers.personId,
+              parsed.data.cambios.map((c) => c.personId),
+            ),
+            or(isNull(teamMembers.validTo), gte(teamMembers.validTo, today)),
+          ),
+        )
+      if (enPlantel.length !== parsed.data.cambios.length) {
+        return { ok: false, error: 'Alguno de los jugadores no forma parte del plantel de la categoría.' }
+      }
+
+      await tx
+        .insert(participations)
+        .values(
+          parsed.data.cambios.map((c) => ({
+            clubId: ctx.clubId,
+            eventId: evento.id,
+            personId: c.personId,
+            status: c.status,
+            recordedBy: ctx.userId,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [participations.eventId, participations.personId],
+          set: { status: sql`excluded.status`, recordedBy: ctx.userId, recordedAt: new Date() },
+        })
+
+      await audit('participations', null, 'custom', {
+        eventId: evento.id,
+        action: 'asistencia',
+        cambios: parsed.data.cambios.length,
+      })
+
+      return { ok: true, data: { guardados: parsed.data.cambios.length } }
     },
     { userId: ctx.userId },
   )

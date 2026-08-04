@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { eventKind } from '@/db/schema'
+import { eventKind, participationStatus } from '@/db/schema'
 
 export const eventoSchema = z.object({
   kind: z.enum(eventKind.enumValues),
@@ -22,3 +22,25 @@ export const convocatoriaSchema = z.object({
 })
 
 export type ConvocatoriaInput = z.infer<typeof convocatoriaSchema>
+
+/** Estados que un manager puede marcar en la pantalla de asistencia. */
+export const asistenciaEstados = ['presente', 'ausente', 'justificado'] as const
+export type AsistenciaEstado = (typeof asistenciaEstados)[number]
+
+export const asistenciaSchema = z.object({
+  eventId: z.string().uuid(),
+  cambios: z
+    .array(
+      z.object({
+        personId: z.string().uuid(),
+        status: z
+          .enum(participationStatus.enumValues)
+          .refine((s) => s === 'convocado' || asistenciaEstados.includes(s as AsistenciaEstado), {
+            message: 'Estado de asistencia inválido',
+          }),
+      }),
+    )
+    .min(1, 'No hay cambios para guardar'),
+})
+
+export type AsistenciaInput = z.infer<typeof asistenciaSchema>

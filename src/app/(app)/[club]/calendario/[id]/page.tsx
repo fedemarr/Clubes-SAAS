@@ -55,6 +55,10 @@ export default async function EventoDetallePage({
     ? await checkPermission('convocatoria.publicar', { kind: 'team', teamId: evento.teamId }, slug)
     : null
 
+  const puedeTomarAsistencia = evento.teamId
+    ? await checkPermission('asistencia.tomar', { kind: 'team', teamId: evento.teamId }, slug)
+    : null
+
   const KIND_LABELS: Record<string, string> = {
     entrenamiento: 'Entrenamiento',
     partido: 'Partido',
@@ -114,6 +118,17 @@ export default async function EventoDetallePage({
             style={{ padding: '0.4rem 0.8rem', border: '1px solid #d1d5db', borderRadius: 6 }}
           >
             Convocar jugadores
+          </Link>
+        </div>
+      )}
+
+      {puedeTomarAsistencia && (
+        <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <Link
+            href={`/${slug}/calendario/${id}/asistencia`}
+            style={{ padding: '0.4rem 0.8rem', border: '1px solid #d1d5db', borderRadius: 6 }}
+          >
+            Tomar asistencia
           </Link>
         </div>
       )}
