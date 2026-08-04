@@ -43,3 +43,19 @@ export const periodoSchema = z.object({
 })
 
 export type PeriodoInput = z.infer<typeof periodoSchema>
+
+export const anularCargoSchema = z.object({
+  cargoId: z.string().uuid(),
+  motivo: z.string().trim().min(5, 'El motivo es obligatorio (mínimo 5 caracteres)').max(200),
+})
+
+export type AnularCargoInput = z.infer<typeof anularCargoSchema>
+
+export const ajusteCuentaSchema = z.object({
+  accountId: z.string().uuid(),
+  direccion: z.enum(['debito', 'credito']),
+  montoCents: z.number().int().positive('El monto debe ser mayor a cero'),
+  motivo: z.string().trim().min(5, 'El motivo es obligatorio (mínimo 5 caracteres)').max(200),
+})
+
+export type AjusteCuentaInput = z.infer<typeof ajusteCuentaSchema>

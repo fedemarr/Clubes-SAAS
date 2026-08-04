@@ -9,6 +9,8 @@ import {
   prorratearMonto,
   resolverVencimiento,
   generarCargosDelMes,
+  saldoDesdeMovimientos,
+  validarMotivo,
 } from './service'
 import type { ConfigFinanzas, PlanConMonto } from './service'
 
@@ -216,5 +218,30 @@ describe('M3.2 generación mensual', () => {
     const a = generarCargosDelMes('2026-07', config, membresias, planes)
     const b = generarCargosDelMes('2026-07', config, membresias, planes)
     expect(b).toEqual(a)
+  })
+})
+
+describe('M3.3 cuenta corriente', () => {
+  it('saldoDesdeMovimientos: débito suma deuda, crédito la baja', () => {
+    const movs = [
+      { direction: 'debito' as const, amountCents: 6500000 },
+      { direction: 'debito' as const, amountCents: 5200000 },
+      { direction: 'credito' as const, amountCents: 1000000 },
+    ]
+    expect(saldoDesdeMovimientos(movs)).toBe(10700000)
+  })
+
+  it('saldoDesdeMovimientos: cuenta saldada da cero', () => {
+    const movs = [
+      { direction: 'debito' as const, amountCents: 6500000 },
+      { direction: 'credito' as const, amountCents: 6500000 },
+    ]
+    expect(saldoDesdeMovimientos(movs)).toBe(0)
+  })
+
+  it('validarMotivo exige mínimo de caracteres y recorta espacios', () => {
+    expect(validarMotivo('   ')).toContain('obligatorio')
+    expect(validarMotivo('ok')).toContain('obligatorio')
+    expect(validarMotivo('error de carga')).toBeNull()
   })
 })

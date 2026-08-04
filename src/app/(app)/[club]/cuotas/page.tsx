@@ -55,6 +55,9 @@ export default async function CuotasPage({ params }: { params: Promise<{ club: s
           {puedeEmitir && (
             <>
               <Button render={<Link href={`/${slug}/cuotas/generar`} />}>Generar cuotas</Button>
+              <Button render={<Link href={`/${slug}/cuotas/cuentas`} />} variant="outline">
+                Cuenta corriente
+              </Button>
               <Button render={<Link href={`/${slug}/cuotas/membresias`} />} variant="outline">
                 Membresías
               </Button>

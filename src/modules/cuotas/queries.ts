@@ -1,7 +1,7 @@
-import { and, asc, eq, gte, isNull, lte, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { withTenant } from '@/db/tenant'
-import { accounts, clubs, feePlans, memberships, persons } from '@/db/schema'
+import { accounts, charges, clubs, feePlans, ledgerEntries, memberships, payments, persons } from '@/db/schema'
 import { decimalToCents } from '@/lib/money'
 import { planVigente, primerDiaPeriodo, ultimoDiaPeriodo } from './service'
 import type { ConfigFinanzas, PlanConMonto } from './service'
@@ -201,4 +201,130 @@ export async function obtenerConfigFinanzas(clubId: string): Promise<ConfigFinan
     prorrateoParcial: club?.financeConfig?.prorrateoParcial ?? 'prorratear',
     vencimientoDia: club?.financeConfig?.vencimientoDia ?? 10,
   }
+}
+
+// ---------------------------------------------------------------------------
+// M3.3 · Cuenta corriente familiar
+// ---------------------------------------------------------------------------
+
+export async function listarCuentasConSaldo(clubId: string) {
+  return withTenant(clubId, async ({ tx }) => {
+    const cuentas = await tx
+      .select({
+        id: accounts.id,
+        label: accounts.label,
+        holderNombre: persons.firstName,
+        holderApellido: persons.lastName,
+      })
+      .from(accounts)
+      .innerJoin(persons, eq(persons.id, accounts.holderPersonId))
+      .where(and(eq(accounts.clubId, clubId), isNull(accounts.deletedAt)))
+      .orderBy(asc(persons.lastName))
+
+    // La vista es SECURITY INVOKER: con withTenant ya devuelve solo este club.
+    // El filtro por club_id extra es defensa en profundidad.
+    const saldos = await tx.execute<{ account_id: string; balance: string }>(
+      sql`SELECT account_id, balance FROM account_balances WHERE club_id = ${clubId}`,
+    )
+    const porId = new Map(saldos.rows.map((r) => [r.account_id, r.balance]))
+    return cuentas.map((c) => ({ ...c, balanceCents: decimalToCents(porId.get(c.id) ?? '0') }))
+  })
+}
+
+export async function obtenerCuenta(clubId: string, accountId: string) {
+  return withTenant(clubId, async ({ tx }) => {
+    const [cuenta] = await tx
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.clubId, clubId), eq(accounts.id, accountId), isNull(accounts.deletedAt)))
+      .limit(1)
+    if (!cuenta) return null
+    const saldos = await tx.execute<{ balance: string }>(
+      sql`SELECT balance FROM account_balances WHERE account_id = ${accountId}`,
+    )
+    const [holder] = await tx
+      .select()
+      .from(persons)
+      .where(eq(persons.id, cuenta.holderPersonId))
+      .limit(1)
+    return { ...cuenta, balanceCents: decimalToCents(saldos.rows[0]?.balance ?? '0'), holder }
+  })
+}
+
+export type MovimientoCuenta = {
+  id: string
+  direction: 'debito' | 'credito'
+  amountCents: number
+  memo: string | null
+  bookedAt: Date
+  reversesEntryId: string | null
+  source: 'cargo' | 'pago' | 'ajuste' | 'reversion'
+  cargo: { concept: string; period: string; status: string } | null
+  pago: { method: string; status: string } | null
+}
+
+export async function movimientosDeCuenta(clubId: string, accountId: string): Promise<MovimientoCuenta[]> {
+  return withTenant(clubId, async ({ tx }) => {
+    const movs = await tx
+      .select({
+        id: ledgerEntries.id,
+        direction: ledgerEntries.direction,
+        amount: ledgerEntries.amount,
+        memo: ledgerEntries.memo,
+        bookedAt: ledgerEntries.bookedAt,
+        chargeId: ledgerEntries.chargeId,
+        paymentId: ledgerEntries.paymentId,
+        reversesEntryId: ledgerEntries.reversesEntryId,
+      })
+      .from(ledgerEntries)
+      .where(and(eq(ledgerEntries.clubId, clubId), eq(ledgerEntries.accountId, accountId)))
+      .orderBy(desc(ledgerEntries.bookedAt))
+
+    const chargeIds = [...new Set(movs.map((m) => m.chargeId).filter((id): id is string => Boolean(id)))]
+    const paymentIds = [...new Set(movs.map((m) => m.paymentId).filter((id): id is string => Boolean(id)))]
+    const [cargos, pagos] = await Promise.all([
+      chargeIds.length > 0
+        ? tx
+            .select({ id: charges.id, concept: charges.concept, period: charges.period, status: charges.status })
+            .from(charges)
+            .where(inArray(charges.id, chargeIds))
+        : [],
+      paymentIds.length > 0
+        ? tx
+            .select({ id: payments.id, method: payments.method, status: payments.status })
+            .from(payments)
+            .where(inArray(payments.id, paymentIds))
+        : [],
+    ])
+    const cargoById = new Map(cargos.map((c) => [c.id, c]))
+    const pagoById = new Map(pagos.map((p) => [p.id, p]))
+
+    return movs.map((m) => ({
+      id: m.id,
+      direction: m.direction,
+      amountCents: decimalToCents(m.amount),
+      memo: m.memo,
+      bookedAt: m.bookedAt,
+      reversesEntryId: m.reversesEntryId,
+      source: m.paymentId ? 'pago' as const : m.reversesEntryId ? 'reversion' as const : m.chargeId ? 'cargo' as const : 'ajuste' as const,
+      cargo: m.chargeId && cargoById.has(m.chargeId) ? cargoById.get(m.chargeId)! : null,
+      pago: m.paymentId && pagoById.has(m.paymentId) ? pagoById.get(m.paymentId)! : null,
+    }))
+  })
+}
+
+export async function cargosAbiertosDeCuenta(clubId: string, accountId: string) {
+  return withTenant(clubId, async ({ tx }) => {
+    return tx
+      .select()
+      .from(charges)
+      .where(
+        and(
+          eq(charges.clubId, clubId),
+          eq(charges.accountId, accountId),
+          inArray(charges.status, ['pendiente', 'parcial', 'vencido']),
+        ),
+      )
+      .orderBy(asc(charges.dueOn))
+  })
 }

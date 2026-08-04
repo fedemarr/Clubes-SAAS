@@ -260,3 +260,26 @@ export function generarCargosDelMes(
 
   return { cargos, omitidos }
 }
+
+// ---------------------------------------------------------------------------
+// M3.3 · Cuenta corriente familiar
+// ---------------------------------------------------------------------------
+
+export type MovimientoPlata = { direction: 'debito' | 'credito'; amountCents: number }
+
+/**
+ * Saldo desde una lista de movimientos (ledger): débito suma deuda, crédito
+ * la baja. Es la misma fórmula que la vista account_balances — este helper
+ * la deja testeable sin DB.
+ */
+export function saldoDesdeMovimientos(movs: MovimientoPlata[]): number {
+  return movs.reduce((acc, m) => acc + (m.direction === 'debito' ? m.amountCents : -m.amountCents), 0)
+}
+
+/** El motivo es obligatorio en todo ajuste manual y toda anulación (brief M3). */
+export function validarMotivo(motivo: string): string | null {
+  const t = motivo.trim()
+  if (t.length < 5) return 'El motivo es obligatorio (mínimo 5 caracteres).'
+  if (t.length > 200) return 'El motivo no puede superar los 200 caracteres.'
+  return null
+}

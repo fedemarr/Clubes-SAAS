@@ -131,12 +131,20 @@ Las acciones de escritura (crear/actualizar/eliminar) validan el scopeTeamIds co
 
 Se decidiÃ³ construir una tabla `notifications` fuera de `schema.ts` (precedente: `email_tokens` mencionado en DECISIONS de M0) con un emisor que persiste y loguea. Los canales (WhatsApp, mail, push) se agregan en M5-M6. Esto fue confirmado en la decisiÃ³n de diseÃ±o para M2.2 convocatoria.
 
-## Base de diseño (antes de M3)
+## Base de diseï¿½o (antes de M3)
 
 ### shadcn/ui + tokens de marca desde clubs.branding
 
-Se instaló shadcn/ui sobre Tailwind v4 (el CLI usa la variante Base UI de los componentes: Button con prop ender en vez de sChild). Los tokens quedan en globals.css en formato oklch.
+Se instalï¿½ shadcn/ui sobre Tailwind v4 (el CLI usa la variante Base UI de los componentes: Button con prop ender en vez de sChild). Los tokens quedan en globals.css en formato oklch.
 
-La marca del club se inyecta en src/lib/theme.ts (randTokens): a partir de clubs.branding.primary (hex) se derivan --primary, --primary-foreground (contraste por luminancia relativa), --ring, --accent (tint al 10% con color-mix) y los vars de sidebar. Se aplican como CSS vars en el wrapper del layout (app)/[club], así el subárbol del tenant hereda la marca sin tocar código por club (regla 2). Los colores con significado (rojo=deuda/vencido, verde=al día) siguen siendo explícitos en cada componente, nunca se derivan de la marca.
+La marca del club se inyecta en src/lib/theme.ts (randTokens): a partir de clubs.branding.primary (hex) se derivan --primary, --primary-foreground (contraste por luminancia relativa), --ring, --accent (tint al 10% con color-mix) y los vars de sidebar. Se aplican como CSS vars en el wrapper del layout (app)/[club], asï¿½ el subï¿½rbol del tenant hereda la marca sin tocar cï¿½digo por club (regla 2). Los colores con significado (rojo=deuda/vencido, verde=al dï¿½a) siguen siendo explï¿½citos en cada componente, nunca se derivan de la marca.
 
-El resto de las páginas (formularios de M1/M2.1, pantallas mobile de asistencia/convocatoria) se migran de a una a medida que se tocan, sin romperlas: primero las listas visibles (calendario, padrón) y el dashboard.
+El resto de las pï¿½ginas (formularios de M1/M2.1, pantallas mobile de asistencia/convocatoria) se migran de a una a medida que se tocan, sin romperlas: primero las listas visibles (calendario, padrï¿½n) y el dashboard.
+
+## M3 ï¿½ Cuotas y cuenta corriente
+
+### `account_balances` como vista con `SECURITY INVOKER`
+
+La vista se definiÃ³ en `rls.sql` (secciÃ³n 5) como vista simple, lo que la hace `SECURITY DEFINER` por default: corrÃ­a con permisos del owner y **no aplicaba RLS**, devolviendo el saldo agregado de todos los clubes a cualquiera (fuga de datos entre tenants, vÃ­a `app_user`). Se le agregÃ³ `WITH (security_invoker = true)` para que evalÃºe RLS de las tablas subyacentes con el rol del llamador (`app_user`).
+
+Verificado contra dev real: sin `set_config` devuelve 0 filas; con `withTenant`, cada club ve solo sus propias `account_balances`. Requiere correr `npm run db:rls` por ambiente (la vista ya estÃ¡ creada; `apply-rls.ts` reaplica la definiciÃ³n).

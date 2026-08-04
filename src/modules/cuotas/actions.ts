@@ -5,7 +5,7 @@ import { accounts, charges, feePlans, ledgerEntries, memberships, persons } from
 import { withTenant } from '@/db/tenant'
 import { requirePermission } from '@/lib/permissions'
 import { centsToDecimal } from '@/lib/money'
-import { planSchema, ajustePrecioSchema, membresiaSchema, terminarMembresiaSchema, periodoSchema } from './schemas'
+import { planSchema, ajustePrecioSchema, membresiaSchema, terminarMembresiaSchema, periodoSchema, anularCargoSchema, ajusteCuentaSchema } from './schemas'
 import { validarNuevaVersion, generarCargosDelMes } from './service'
 import { membresiasParaPeriodo, obtenerConfigFinanzas, planesParaCargo } from './queries'
 
@@ -296,6 +296,88 @@ export async function confirmarCargos(
     }, { userId: ctx.userId })
 
     return { ok: true, data: { insertados, existentes } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M3.3 · Cuenta corriente familiar
+// ---------------------------------------------------------------------------
+
+/**
+ * Un cargo emitido no se edita (regla del brief): se anula con nota de
+ * crédito. El ledger es append-only, así que la anulación es un asiento
+ * de crédito que apunta al débito original vía reversesEntryId, y el cargo
+ * pasa a status anulado. Nada se borra.
+ */
+export async function anularCargo(clubSlug: string, input: unknown): Promise<ActionResult<{ cargoId: string }>> {
+  const parsed = anularCargoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cuotas.emitir', { kind: 'club' }, clubSlug)
+
+    const cargoId = await withTenant(ctx.clubId, async ({ tx }) => {
+      const [cargo] = await tx
+        .select()
+        .from(charges)
+        .where(and(eq(charges.clubId, ctx.clubId), eq(charges.id, parsed.data.cargoId)))
+        .limit(1)
+      if (!cargo) throw new Error('No existe ese cargo.')
+      if (cargo.status === 'anulado') throw new Error('Ese cargo ya está anulado.')
+
+      const [original] = await tx
+        .select()
+        .from(ledgerEntries)
+        .where(and(eq(ledgerEntries.chargeId, cargo.id), eq(ledgerEntries.direction, 'debito')))
+        .limit(1)
+      if (!original) throw new Error('El cargo no tiene su débito en el ledger.')
+
+      await tx.insert(ledgerEntries).values({
+        clubId: ctx.clubId,
+        accountId: cargo.accountId,
+        direction: 'credito',
+        amount: cargo.amount,
+        reversesEntryId: original.id,
+        memo: `Anulación: ${parsed.data.motivo}`,
+      })
+      await tx.update(charges).set({ status: 'anulado' }).where(eq(charges.id, cargo.id))
+      return cargo.id
+    }, { userId: ctx.userId })
+
+    return { ok: true, data: { cargoId } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+/** Ajuste manual de la cuenta corriente, siempre con motivo obligatorio. */
+export async function ajustarCuenta(clubSlug: string, input: unknown): Promise<ActionResult<null>> {
+  const parsed = ajusteCuentaSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cuotas.emitir', { kind: 'club' }, clubSlug)
+
+    await withTenant(ctx.clubId, async ({ tx }) => {
+      const [cuenta] = await tx
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.clubId, ctx.clubId), eq(accounts.id, parsed.data.accountId)))
+        .limit(1)
+      if (!cuenta) throw new Error('No existe esa cuenta.')
+
+      await tx.insert(ledgerEntries).values({
+        clubId: ctx.clubId,
+        accountId: cuenta.id,
+        direction: parsed.data.direccion,
+        amount: centsToDecimal(parsed.data.montoCents),
+        memo: `Ajuste: ${parsed.data.motivo}`,
+      })
+    }, { userId: ctx.userId })
+
+    return { ok: true, data: null }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
   }

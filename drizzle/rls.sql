@@ -56,7 +56,11 @@ CREATE TRIGGER ledger_no_update
   FOR EACH ROW EXECUTE FUNCTION deny_ledger_mutation();
 
 -- 5. Saldo de cuenta corriente. Débito suma deuda, crédito la baja.
-CREATE OR REPLACE VIEW account_balances AS
+--    SECURITY INVOKER: la vista corre con los permisos del usuario que la
+--    lee y respeta RLS de accounts/ledger_entries → sin set_config devuelve
+--    cero filas (regla M0), nunca los saldos de otros tenants.
+CREATE OR REPLACE VIEW account_balances
+WITH (security_invoker = true) AS
 SELECT
   a.id                AS account_id,
   a.club_id,
