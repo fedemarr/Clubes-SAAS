@@ -1,12 +1,13 @@
 'use server'
 
 import { and, eq } from 'drizzle-orm'
-import { accounts, feePlans, memberships, persons } from '@/db/schema'
+import { accounts, charges, feePlans, ledgerEntries, memberships, persons } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { requirePermission } from '@/lib/permissions'
 import { centsToDecimal } from '@/lib/money'
-import { planSchema, ajustePrecioSchema, membresiaSchema, terminarMembresiaSchema } from './schemas'
-import { validarNuevaVersion } from './service'
+import { planSchema, ajustePrecioSchema, membresiaSchema, terminarMembresiaSchema, periodoSchema } from './schemas'
+import { validarNuevaVersion, generarCargosDelMes } from './service'
+import { membresiasParaPeriodo, obtenerConfigFinanzas, planesParaCargo } from './queries'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -148,6 +149,153 @@ export async function terminarMembresia(clubSlug: string, input: unknown): Promi
     }, { userId: ctx.userId })
 
     return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M3.2 · Generación mensual de cargos
+// ---------------------------------------------------------------------------
+
+export type CargoPreview = {
+  membershipId: string
+  personId: string
+  personaNombre: string
+  personaApellido: string
+  cuentaLabel: string | null
+  planName: string
+  sport: string | null
+  concept: string
+  amountCents: number
+  descuentoPct: number
+  dueOn: string
+}
+
+export type PreviewPorCuenta = {
+  accountId: string
+  cuentaLabel: string | null
+  personaNombre: string
+  personaApellido: string
+  cargos: CargoPreview[]
+  totalCents: number
+}
+
+export type Previsualizacion = {
+  periodo: string
+  config: { prorrateoParcial: string; vencimientoDia: number }
+  cuentas: PreviewPorCuenta[]
+  omitidos: number
+  totalCents: number
+  cantidad: number
+}
+
+export async function previsualizarCargos(clubSlug: string, input: unknown): Promise<ActionResult<Previsualizacion>> {
+  const parsed = periodoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Período inválido' }
+
+  try {
+    const ctx = await requirePermission('cuotas.emitir', { kind: 'club' }, clubSlug)
+    const [config, membresias, planes] = await Promise.all([
+      obtenerConfigFinanzas(ctx.clubId),
+      membresiasParaPeriodo(ctx.clubId, parsed.data.periodo),
+      planesParaCargo(ctx.clubId),
+    ])
+
+    const resultado = generarCargosDelMes(parsed.data.periodo, config, membresias, planes)
+
+    const porCuenta = Map.groupBy(resultado.cargos, (c) => c.accountId)
+    const cuentas: PreviewPorCuenta[] = []
+    for (const [accountId, cargos] of porCuenta) {
+      const primera = cargos[0]!
+      const deMembresia = membresias.find((m) => m.id === primera.membershipId)
+      cuentas.push({
+        accountId,
+        cuentaLabel: deMembresia?.cuentaLabel ?? null,
+        personaNombre: deMembresia?.personaNombre ?? '',
+        personaApellido: deMembresia?.personaApellido ?? '',
+        cargos: cargos.map((c) => ({
+          ...c,
+          personaNombre: deMembresia?.personaNombre ?? '',
+          personaApellido: deMembresia?.personaApellido ?? '',
+          cuentaLabel: deMembresia?.cuentaLabel ?? null,
+        })),
+        totalCents: cargos.reduce((acc, c) => acc + c.amountCents, 0),
+      })
+    }
+
+    return {
+      ok: true,
+      data: {
+        periodo: parsed.data.periodo,
+        config: { prorrateoParcial: config.prorrateoParcial, vencimientoDia: config.vencimientoDia },
+        cuentas,
+        omitidos: resultado.omitidos.length,
+        totalCents: resultado.cargos.reduce((acc, c) => acc + c.amountCents, 0),
+        cantidad: resultado.cargos.length,
+      },
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+export async function confirmarCargos(
+  clubSlug: string,
+  input: unknown,
+): Promise<ActionResult<{ insertados: number; existentes: number }>> {
+  const parsed = periodoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Período inválido' }
+
+  try {
+    const ctx = await requirePermission('cuotas.emitir', { kind: 'club' }, clubSlug)
+    const [config, membresias, planes] = await Promise.all([
+      obtenerConfigFinanzas(ctx.clubId),
+      membresiasParaPeriodo(ctx.clubId, parsed.data.periodo),
+      planesParaCargo(ctx.clubId),
+    ])
+
+    const resultado = generarCargosDelMes(parsed.data.periodo, config, membresias, planes)
+
+    const { insertados, existentes } = await withTenant(ctx.clubId, async ({ tx }) => {
+      let insertados = 0
+      let existentes = 0
+      for (const c of resultado.cargos) {
+        const [inserted] = await tx
+          .insert(charges)
+          .values({
+            clubId: ctx.clubId,
+            accountId: c.accountId,
+            membershipId: c.membershipId,
+            period: parsed.data.periodo,
+            concept: c.concept,
+            amount: centsToDecimal(c.amountCents),
+            dueOn: c.dueOn,
+            status: 'pendiente',
+          })
+          .onConflictDoNothing({ target: [charges.membershipId, charges.period, charges.concept] })
+          .returning()
+
+        if (!inserted) {
+          existentes += 1
+          continue
+        }
+
+        // Todo cargo escribe su débito en el ledger (append-only).
+        await tx.insert(ledgerEntries).values({
+          clubId: ctx.clubId,
+          accountId: c.accountId,
+          direction: 'debito',
+          amount: centsToDecimal(c.amountCents),
+          chargeId: inserted.id,
+          memo: c.concept,
+        })
+        insertados += 1
+      }
+      return { insertados, existentes }
+    }, { userId: ctx.userId })
+
+    return { ok: true, data: { insertados, existentes } }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
   }

@@ -54,13 +54,16 @@ export default async function CuotasPage({ params }: { params: Promise<{ club: s
         <div className="flex items-center gap-2">
           {puedeEmitir && (
             <>
+              <Button render={<Link href={`/${slug}/cuotas/generar`} />}>Generar cuotas</Button>
               <Button render={<Link href={`/${slug}/cuotas/membresias`} />} variant="outline">
                 Membresías
               </Button>
               <Button render={<Link href={`/${slug}/cuotas/ajustar`} />} variant="outline">
                 Ajustar precios
               </Button>
-              <Button render={<Link href={`/${slug}/cuotas/nuevo`} />}>Nuevo plan</Button>
+              <Button render={<Link href={`/${slug}/cuotas/nuevo`} />} variant="outline">
+                Nuevo plan
+              </Button>
             </>
           )}
         </div>

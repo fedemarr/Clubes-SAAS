@@ -37,3 +37,9 @@ export const terminarMembresiaSchema = z.object({
 })
 
 export type TerminarMembresiaInput = z.infer<typeof terminarMembresiaSchema>
+
+export const periodoSchema = z.object({
+  periodo: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Período inválido (espera YYYY-MM)'),
+})
+
+export type PeriodoInput = z.infer<typeof periodoSchema>
