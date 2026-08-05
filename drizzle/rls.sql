@@ -330,3 +330,31 @@ CREATE POLICY tenant_isolation ON payment_plans
   USING (club_id = current_club())
   WITH CHECK (club_id = current_club());
 CREATE INDEX IF NOT EXISTS payment_plans_account_idx ON payment_plans (club_id, account_id, status);
+
+-- 12. Suscripciones de Web Push (M6). Vive acá y no en schema.ts por la
+--     misma razón que notifications: es el andamiaje del canal push, no una
+--     entidad de negocio. Una fila = un navegador/dispositivo registrado
+--     para recibir push del club. RLS solo por club (mismo criterio que
+--     notifications): el filtro por user_id lo hacen las queries, así el
+--     socio solo toca sus propias suscripciones. Endpoint único por club:
+--     el mismo navegador no se duplica.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  user_id uuid NOT NULL REFERENCES users(id),
+  endpoint text NOT NULL,
+  keys_p256dh text NOT NULL,
+  keys_auth text NOT NULL,
+  user_agent text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON push_subscriptions TO app_user;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON push_subscriptions;
+CREATE POLICY tenant_isolation ON push_subscriptions
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_club_endpoint_uq ON push_subscriptions (club_id, endpoint);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions (club_id, user_id);

@@ -186,7 +186,7 @@ export async function crearPlanDePago(clubSlug: string, input: unknown): Promise
 
     const id = await withTenant(
       ctx.clubId,
-      async ({ tx, audit }) => {
+      async ({ tx, audit, onCommit }) => {
         const { rows } = await tx.execute<{ balance: string; holder_user_id: string | null; holder_apellido: string; holder_nombre: string }>(sql`
           SELECT bal.balance, p.user_id AS holder_user_id, p.last_name AS holder_apellido, p.first_name AS holder_nombre
           FROM account_balances bal
@@ -219,7 +219,7 @@ export async function crearPlanDePago(clubSlug: string, input: unknown): Promise
         })
 
         if (cuenta.holder_user_id) {
-          await emitirNotificaciones(tx, ctx.clubId, [
+          await emitirNotificaciones({ tx, onCommit }, ctx.clubId, [
             {
               userId: cuenta.holder_user_id,
               type: 'cobranza.plan_de_pago',

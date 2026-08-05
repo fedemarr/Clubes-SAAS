@@ -2,6 +2,7 @@ import { Bell } from 'lucide-react'
 import { checkPermission } from '@/lib/permissions'
 import { listarNotificaciones } from '@/modules/notificaciones/queries'
 import { NotificacionesPanel } from '@/modules/notificaciones/components/NotificacionesPanel'
+import { PushSubscribeCard } from '@/modules/notificaciones/components/PushSubscribeCard'
 import { PageHeader } from '@/components/page-header'
 
 export const dynamic = 'force-dynamic'
@@ -33,6 +34,9 @@ export default async function NotificacionesPage({
         }
       />
       <NotificacionesPanel clubSlug={slug} iniciales={items} />
+      <div className="mt-6">
+        <PushSubscribeCard clubSlug={slug} />
+      </div>
     </main>
   )
 }

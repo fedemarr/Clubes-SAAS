@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
-import type { Tx } from '@/db/tenant'
+import type { TenantCtx } from '@/db/tenant'
+import { enviarPush } from './push'
 
 export type NotificacionInput = {
   userId: string
@@ -13,11 +14,14 @@ export type NotificacionInput = {
  * Capa de eventos de dominio (transversal del brief). La lógica de negocio
  * nunca llama a un canal (WhatsApp, mail, push) directamente: emite una
  * notificación a la bandeja de `notifications` (tabla fuera de schema.ts,
- * ver DECISIONS.md M2.2) y loguea a consola — los canales reales se
- * suscriben a partir de M5/M6. Se ejecuta dentro de withTenant() para que
- * el INSERT respete RLS.
+ * ver DECISIONS.md M2.2) y, tras el commit, dispara el push por
+ * `ctx.onCommit` — con la transacción cerrada, igual que los mails.
  */
-export async function emitirNotificaciones(tx: Tx, clubId: string, inputs: NotificacionInput[]): Promise<number> {
+export async function emitirNotificaciones(
+  ctx: Pick<TenantCtx, 'tx' | 'onCommit'>,
+  clubId: string,
+  inputs: NotificacionInput[],
+): Promise<number> {
   if (inputs.length === 0) return 0
 
   // Idempotencia por transacción: mismo usuario + tipo + título + data es un
@@ -28,8 +32,9 @@ export async function emitirNotificaciones(tx: Tx, clubId: string, inputs: Notif
     unicos.set(JSON.stringify({ userId: n.userId, type: n.type, title: n.title, data: n.data ?? null }), n)
   }
 
+  const emitidos: NotificacionInput[] = []
   for (const n of unicos.values()) {
-    await tx.execute(sql`
+    await ctx.tx.execute(sql`
       INSERT INTO notifications (club_id, user_id, type, title, body, data)
       VALUES (
         ${clubId},
@@ -41,7 +46,12 @@ export async function emitirNotificaciones(tx: Tx, clubId: string, inputs: Notif
       )
     `)
     console.log(`[notif:dev] user=${n.userId} type=${n.type} title="${n.title}"`)
+    emitidos.push(n)
   }
 
-  return unicos.size
+  ctx.onCommit(() => {
+    void enviarPush(clubId, emitidos)
+  })
+
+  return emitidos.length
 }

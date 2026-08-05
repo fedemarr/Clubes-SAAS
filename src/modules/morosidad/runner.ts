@@ -87,7 +87,7 @@ export async function ejecutarCobranzaCore(clubId: string): Promise<ResultadoEje
 
   const resultado = await withTenant(
     clubId,
-    async ({ tx, audit }) => {
+    async ({ tx, audit, onCommit }) => {
       const notif: NotificacionInput[] = []
       const mailsPendientes: MailPendiente[] = []
       let mensajes = 0
@@ -145,7 +145,7 @@ export async function ejecutarCobranzaCore(clubId: string): Promise<ResultadoEje
         })
       }
 
-      if (notif.length > 0) await emitirNotificaciones(tx, clubId, notif)
+      if (notif.length > 0) await emitirNotificaciones({ tx, onCommit }, clubId, notif)
       return { mensajes, avisosCoordinador, sugerencias, mailsPendientes }
     },
     { userId: null },

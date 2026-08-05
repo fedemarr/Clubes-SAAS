@@ -38,3 +38,45 @@ self.addEventListener('fetch', (event) => {
     })(),
   )
 })
+
+// Push del portal (M6): el payload viene JSON del servidor
+// ({ type, title, body, data, clubId }). Un click en la notificación abre el
+// portal (o la página de pagos si es de cobranza).
+self.addEventListener('push', (event) => {
+  let payload = {}
+  try {
+    payload = event.data ? event.data.json() : {}
+  } catch {
+    // noop
+  }
+  const { title = 'Club', body = '', data = null } = payload
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: '/icons/icon.svg',
+      badge: '/icons/maskable.svg',
+      data,
+      tag: data?.type ?? undefined,
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const { data = null } = event.notification
+  const clubId = data?.clubId
+  const route = data?.type === 'pago.acreditado' || data?.type === 'cobranza.plan_de_pago'
+    ? '/portal/pagos'
+    : '/portal'
+  const url = `${self.location.origin}/${clubId ?? ''}${route}`
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const existing = clientList.find((c) => new URL(c.url).pathname === new URL(url).pathname)
+      if (existing) {
+        existing.focus()
+        return
+      }
+      return self.clients.openWindow(url)
+    }),
+  )
+})

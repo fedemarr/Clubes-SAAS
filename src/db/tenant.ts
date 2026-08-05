@@ -9,9 +9,18 @@ export type TenantActor = {
   ip?: string | null
 }
 
+/**
+ * Callback que se ejecuta DESPUÉS de que la transacción commitea (o no se
+ * ejecuta si revierte). Es el único lugar permitido para efectos
+ * post-commit (mails, push): nunca hacer una llamada HTTP con la
+ * transacción abierta.
+ */
+export type PostCommit = () => Promise<void> | void
+
 export type TenantCtx = {
   tx: Tx
   audit: AuditFn
+  onCommit: (fn: PostCommit) => void
 }
 
 /**
@@ -38,8 +47,9 @@ export async function withTenant<T>(
 ): Promise<T> {
   const actorValue = actor ? JSON.stringify({ user_id: actor.userId ?? null, ip: actor.ip ?? null }) : ''
   const batchValue = batchId ?? ''
+  const postCommit: PostCommit[] = []
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.execute(sql`
       SELECT
         set_config('app.current_club', ${clubId}, true),
@@ -47,6 +57,18 @@ export async function withTenant<T>(
         set_config('app.current_batch', ${batchValue}, true)
     `)
     const audit = createAuditor(tx)
-    return fn({ tx, audit })
+    return fn({ tx, audit, onCommit: (fn) => postCommit.push(fn) })
   })
+
+  // Los callbacks post-commit son best-effort (canales como mail/push):
+  // corren con la transacción ya cerrada y un fallo no revierte nada.
+  for (const fn of postCommit) {
+    try {
+      await fn()
+    } catch (err) {
+      console.error('[withTenant:onCommit]', err)
+    }
+  }
+
+  return result
 }

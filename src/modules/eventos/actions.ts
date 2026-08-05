@@ -171,7 +171,7 @@ export async function publicarConvocatoria(
 
   return withTenant(
     ctx.clubId,
-    async ({ tx, audit }) => {
+    async ({ tx, audit, onCommit }) => {
       const [evento] = await tx
         .select()
         .from(events)
@@ -217,7 +217,7 @@ export async function publicarConvocatoria(
 
       const destinatarios = await resolverDestinatariosConvocatoria(tx, ctx.clubId, parsed.data.personIds)
       const notificados = await emitirNotificaciones(
-        tx,
+        { tx, onCommit },
         ctx.clubId,
         destinatarios.map((userId) => ({
           userId,

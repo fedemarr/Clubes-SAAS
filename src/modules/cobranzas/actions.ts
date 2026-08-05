@@ -83,7 +83,7 @@ export async function registrarPago(clubSlug: string, input: unknown): Promise<A
   try {
     const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
 
-    const recibo = await withTenant(ctx.clubId, async ({ tx }) => {
+    const recibo = await withTenant(ctx.clubId, async ({ tx, onCommit }) => {
       const resultado = await acreditarPagoEnLedger(tx, ctx.clubId, {
         accountId: parsed.data.accountId,
         montoCents: parsed.data.montoCents,
@@ -108,7 +108,7 @@ export async function registrarPago(clubSlug: string, input: unknown): Promise<A
         .limit(1)
 
       await emitirNotificaciones(
-        tx,
+        { tx, onCommit },
         ctx.clubId,
         resultado.holderUserId
           ? [
@@ -300,10 +300,10 @@ export async function confirmarConciliacion(clubSlug: string, input: unknown): P
   try {
     const ctx = await requirePermission('cobranzas.conciliar', { kind: 'club' }, clubSlug)
 
-    const resultado = await withTenant(ctx.clubId, async ({ tx }) => {
+    const resultado = await withTenant(ctx.clubId, async ({ tx, onCommit }) => {
       const r = await acreditarPagoPendiente(tx, ctx.clubId, pagoId, accountId)
       await emitirNotificaciones(
-        tx,
+        { tx, onCommit },
         ctx.clubId,
         r.holderUserId
           ? [
@@ -481,7 +481,7 @@ export async function acreditarLoteDebito(clubSlug: string, input: unknown): Pro
 
     const resultado = await withTenant(
       ctx.clubId,
-      async ({ tx, audit }) => {
+      async ({ tx, audit, onCommit }) => {
         const { rows: loteRows } = await tx.execute<{ id: string; numero: string; registros: number; acreditados: number; rechazados: number }>(
           sql`SELECT id, numero, registros, acreditados, rechazados FROM debito_lotes WHERE id = ${parsed.data.loteId} AND club_id = ${ctx.clubId}`,
         )
@@ -515,7 +515,7 @@ export async function acreditarLoteDebito(clubSlug: string, input: unknown): Pro
         await tx.execute(sql`UPDATE debito_lotes SET acreditados = ${totalAcreditados}, status = ${nuevoStatus} WHERE id = ${lote.id}`)
         await audit('debito_lotes', lote.id, 'update', { acreditados: totalAcreditados, status: nuevoStatus })
 
-        if (notif.length > 0) await emitirNotificaciones(tx, ctx.clubId, notif)
+        if (notif.length > 0) await emitirNotificaciones({ tx, onCommit }, ctx.clubId, notif)
         return { loteId: lote.id, acreditados, montoCents }
       },
       { userId: ctx.userId },
@@ -554,7 +554,7 @@ export async function importarRechazosDebito(
 
     const resultado = await withTenant(
       ctx.clubId,
-      async ({ tx, audit }) => {
+      async ({ tx, audit, onCommit }) => {
         const { rows: loteRows } = await tx.execute<{ id: string; numero: string; registros: number; rechazados: number }>(
           sql`SELECT id, numero, registros, rechazados FROM debito_lotes WHERE id = ${parsed.data.loteId} AND club_id = ${ctx.clubId}`,
         )
@@ -620,7 +620,7 @@ export async function importarRechazosDebito(
         await tx.execute(sql`UPDATE debito_lotes SET rechazados = ${totalRechazos}, status = 'cerrado' WHERE id = ${lote.id}`)
         await audit('debito_lotes', lote.id, 'update', { rechazados: totalRechazos, status: 'cerrado' })
 
-        if (notif.length > 0) await emitirNotificaciones(tx, ctx.clubId, notif)
+        if (notif.length > 0) await emitirNotificaciones({ tx, onCommit }, ctx.clubId, notif)
         return { loteId: lote.id, procesados: rechazados + reversados, rechazados, reversados, sinMatch }
       },
       { userId: ctx.userId },
