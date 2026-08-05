@@ -1,12 +1,15 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
+  cancelarPlanDePago,
   crearPlanDePago,
   ejecutarCobranza,
   eliminarReglaCobranza,
   guardarPlantilla,
   guardarReglaCobranza,
+  marcarPlanCompletado,
   resolverSugerencia,
 } from '../actions'
 import type { ResultadoEjecucionCobranza } from '../runner'
@@ -19,7 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmptyState } from '@/components/empty-state'
-import { Play, Settings2, FileText, CalendarClock, Check } from 'lucide-react'
+import { Play, Settings2, FileText, CalendarClock, Check, History } from 'lucide-react'
 
 export type PlantillaVM = { id: string; key: string; name: string; body: string }
 export type PlanVM = {
@@ -35,6 +38,9 @@ export type PlanVM = {
   motivo: string | null
   createdAt: string
   pagadoDesdeInicioCents: number
+  vencidas: number
+  pagas: number
+  restanteCents: number
 }
 export type DeudorVM = { accountId: string; label: string; deudaCents: number }
 export type SugerenciaVM = {
@@ -45,6 +51,18 @@ export type SugerenciaVM = {
   deudaCents: number
   ruleName: string | null
   deliveredAt: string
+}
+export type ContactoHistorialVM = {
+  id: string
+  accountId: string
+  holderApellido: string
+  holderNombre: string
+  channel: string
+  kind: 'mensaje' | 'aviso' | 'sugerencia'
+  ruleName: string | null
+  body: string | null
+  deliveredAt: string
+  resolvedAt: string | null
 }
 
 const CANALES: { value: CanalCobranza; label: string }[] = [
@@ -66,9 +84,10 @@ export function MorosidadPanel({
   puedeConfigurar,
   reglas: reglasIniciales,
   plantillas: plantillasIniciales,
-  planes,
+  planes: planesIniciales,
   deudores,
   sugerencias: sugerenciasIniciales,
+  historial,
 }: {
   clubSlug: string
   puedeConfigurar: boolean
@@ -77,7 +96,10 @@ export function MorosidadPanel({
   planes: PlanVM[]
   deudores: DeudorVM[]
   sugerencias: SugerenciaVM[]
+  historial: ContactoHistorialVM[]
 }) {
+  const router = useRouter()
+
   // ── Ejecutar cobranza ──────────────────────────────────────────────────
   const [ejecutando, setEjecutando] = useState(false)
   const [resultado, setResultado] = useState<ResultadoEjecucionCobranza | null>(null)
@@ -94,6 +116,7 @@ export function MorosidadPanel({
       return
     }
     setResultado(r.data)
+    router.refresh()
   }
 
   // ── Reglas ─────────────────────────────────────────────────────────────
@@ -260,6 +283,34 @@ export function MorosidadPanel({
     setFormPlan((prev) => ({ ...prev, accountId: '', motivo: '' }))
   }
 
+  const [planes, setPlanes] = useState(planesIniciales)
+  const [gestionandoPlan, setGestionandoPlan] = useState<string | null>(null)
+  const [errorPlanGestion, setErrorPlanGestion] = useState<string | null>(null)
+
+  async function onCancelarPlan(id: string) {
+    setErrorPlanGestion(null)
+    setGestionandoPlan(id)
+    const r = await cancelarPlanDePago(clubSlug, { id })
+    setGestionandoPlan(null)
+    if (!r.ok) {
+      setErrorPlanGestion(r.error)
+      return
+    }
+    setPlanes((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'cancelado' } : p)))
+  }
+
+  async function onCompletarPlan(id: string) {
+    setErrorPlanGestion(null)
+    setGestionandoPlan(id)
+    const r = await marcarPlanCompletado(clubSlug, { id })
+    setGestionandoPlan(null)
+    if (!r.ok) {
+      setErrorPlanGestion(r.error)
+      return
+    }
+    setPlanes((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'completado' } : p)))
+  }
+
   // ── Sugerencias ────────────────────────────────────────────────────────
   const [sugerencias, setSugerencias] = useState(sugerenciasIniciales)
   const [resolviendo, setResolviendo] = useState<string | null>(null)
@@ -301,7 +352,8 @@ export function MorosidadPanel({
             <p>
               <span className="font-medium">{resultado.mensajes} mensajes</span> ·{' '}
               {resultado.avisosCoordinador} avisos a coordinadores · {resultado.sugerencias} sugerencias de
-              suspensión. <span className="text-muted-foreground">{resultado.omitidos} omitidos</span>.
+              suspensión · <span className="font-medium">{resultado.mailsEnviados} mails</span>.{' '}
+              <span className="text-muted-foreground">{resultado.omitidos} omitidos</span>.
             </p>
             {Object.keys(resultado.porMotivo).length > 0 && (
               <p className="mt-1 text-xs text-muted-foreground">
@@ -540,6 +592,43 @@ export function MorosidadPanel({
         </section>
       )}
 
+      {/* Historial de contactos */}
+      {historial.length > 0 && (
+        <section>
+          <h2 className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <History className="size-3.5" /> Historial de contactos
+          </h2>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Cada disparo del motor, con canal y estado. La dedupe evita repetir; acá podés auditar lo que se envió.
+          </p>
+          <div className="overflow-hidden rounded-lg border">
+            {historial.map((h) => {
+              const badge = canalBadge[h.channel as CanalCobranza] ?? { label: h.channel, variant: 'outline' as const }
+              return (
+                <div key={h.id} className="flex items-start justify-between gap-3 border-b px-3 py-2.5 last:border-0">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      {h.holderApellido}, {h.holderNombre}
+                      <span className="ml-2 text-xs text-muted-foreground">{h.ruleName}</span>
+                    </p>
+                    {h.body && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{h.body}</p>}
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {new Date(h.deliveredAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                      {h.kind === 'sugerencia' &&
+                        (h.resolvedAt ? ' · resuelta' : ' · pendiente de revisión')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant={badge.variant}>{badge.label}</Badge>
+                    <Badge variant={h.kind === 'sugerencia' ? 'secondary' : 'outline'}>{h.kind}</Badge>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Planes de pago */}
       {puedeConfigurar && (
         <section>
@@ -588,25 +677,60 @@ export function MorosidadPanel({
 
           {planes.length > 0 && (
             <div className="mt-4 overflow-hidden rounded-lg border">
-              {planes.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 border-b px-3 py-2.5 last:border-0">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{p.holderApellido}, {p.holderNombre}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {p.cantidadCuotas} cuotas · desde {p.primeraFecha}
-                      {p.motivo && <> · {p.motivo}</>}
-                    </p>
+              {planes.map((p) => {
+                const porcentaje = p.totalCents > 0 ? Math.min(100, Math.round((p.pagadoDesdeInicioCents / p.totalCents) * 100)) : 0
+                const sePuedeCompletar = p.status === 'activo' && p.pagadoDesdeInicioCents >= p.totalCents
+                return (
+                  <div key={p.id} className="border-b px-3 py-3 last:border-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{p.holderApellido}, {p.holderNombre}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {p.cantidadCuotas} cuotas · desde {p.primeraFecha}
+                          {p.motivo && <> · {p.motivo}</>}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-medium tabular-nums">{formatARS(p.totalCents)}</p>
+                        <p className="text-xs capitalize text-muted-foreground">{p.status}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-2 flex-1 overflow-hidden rounded-sm bg-muted">
+                        <div className="h-full rounded-sm bg-primary/70" style={{ width: `${porcentaje}%` }} />
+                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {porcentaje}% · restan {formatARS(p.restanteCents)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {p.status === 'activo' && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={gestionandoPlan === p.id || !sePuedeCompletar}
+                            onClick={() => onCompletarPlan(p.id)}
+                          >
+                            Marcar completado
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={gestionandoPlan === p.id} onClick={() => onCancelarPlan(p.id)}>
+                            Cancelar plan
+                          </Button>
+                        </>
+                      )}
+                      {!sePuedeCompletar && p.status === 'activo' && (
+                        <span className="text-[11px] text-muted-foreground">
+                          Completar requiere el saldo pago ({p.vencidas} vencidas, {p.pagas} pagas)
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-medium tabular-nums">{formatARS(p.totalCents)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatARS(p.pagadoDesdeInicioCents)} pagado · {p.status}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
+          {errorPlanGestion && <p role="alert" className="mt-2 text-sm text-destructive">{errorPlanGestion}</p>}
         </section>
       )}
     </div>

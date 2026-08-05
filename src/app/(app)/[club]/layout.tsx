@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
   { href: '/categorias', label: 'Categorías', icon: 'categorias' },
   { href: '/calendario', label: 'Calendario', icon: 'calendario' },
   { href: '/cuotas', label: 'Cuotas', icon: 'cuotas' },
+  { href: '/notificaciones', label: 'Notificaciones', icon: 'notificaciones' },
 ]
 
 export default async function ClubLayout({

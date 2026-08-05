@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { withTenant } from '@/db/tenant'
 import { accounts, charges, feePlans, memberships, persons, relationships } from '@/db/schema'
 import { decimalToCents } from '@/lib/money'
-import { diasDesde, mesesEntre, tramoAntiguedad } from './service'
+import { diasDesde, mesesEntre, tramoAntiguedad, avancePlan, planDePago } from './service'
 import type { ContactoReciente, ReglaCobranza } from './service'
 import type { TramoAntiguedad } from './service'
 
@@ -395,6 +395,9 @@ export type PlanDePago = {
   motivo: string | null
   createdAt: Date
   pagadoDesdeInicioCents: number
+  vencidas: number
+  pagas: number
+  restanteCents: number
 }
 
 export async function listarPlanesDePago(clubId: string): Promise<PlanDePago[]> {
@@ -425,24 +428,93 @@ export async function listarPlanesDePago(clubId: string): Promise<PlanDePago[]> 
                pp.monto_cuota, pp.primera_fecha, pp.status, pp.motivo, pp.created_at
       ORDER BY pp.created_at DESC
     `)
+    const hoy = new Date().toISOString().slice(0, 10)
+    return rows.rows.map((r) => {
+      const pagadoDesdeInicioCents = decimalToCents(r.pagado)
+      const cuotas = planDePago(decimalToCents(r.total), r.cantidad_cuotas, r.primera_fecha)
+      const vencidas = cuotas.filter((c) => c.fecha <= hoy).length
+      const avance = avancePlan({ cuotas, pagadoDesdeInicioCents })
+      return {
+        id: r.id,
+        accountId: r.account_id,
+        holderApellido: r.holderApellido,
+        holderNombre: r.holderNombre,
+        totalCents: decimalToCents(r.total),
+        cantidadCuotas: r.cantidad_cuotas,
+        montoCuotaCents: decimalToCents(r.monto_cuota),
+        primeraFecha: r.primera_fecha,
+        status: r.status,
+        motivo: r.motivo,
+        createdAt: new Date(r.created_at),
+        pagadoDesdeInicioCents,
+        vencidas,
+        pagas: avance.pagas,
+        restanteCents: avance.restanteCents,
+      }
+    })
+  })
+}
+
+export type Coordinador = { userId: string; nombre: string; apellido: string; sport: string }
+
+export type ContactoHistorial = {
+  id: string
+  accountId: string
+  holderApellido: string
+  holderNombre: string
+  channel: string
+  kind: 'mensaje' | 'aviso' | 'sugerencia'
+  ruleName: string | null
+  body: string | null
+  deliveredAt: Date
+  resolvedAt: Date | null
+}
+
+/**
+ * Historial de contactos de cobranza (todo lo que el motor hizo, no solo
+ * las sugerencias pendientes). Permite auditar qué se mandó, a quién y por
+ * qué canal, y ver si una sugerencia ya fue resuelta.
+ */
+export async function historialContactos(clubId: string, opts: { limit?: number } = {}): Promise<ContactoHistorial[]> {
+  const limit = opts.limit ?? 50
+  return withTenant(clubId, async ({ tx }) => {
+    const rows = await tx.execute<{
+      id: string
+      account_id: string
+      holderApellido: string
+      holderNombre: string
+      channel: string
+      kind: ContactoHistorial['kind']
+      rule_name: string | null
+      body: string | null
+      delivered_at: Date
+      resolved_at: Date | null
+    }>(sql`
+      SELECT cl.id, cl.account_id, p.last_name AS "holderApellido", p.first_name AS "holderNombre",
+             cl.channel, cl.kind,
+             (SELECT name FROM cobranza_rules cr WHERE cr.id = cl.rule_id) AS rule_name,
+             cl.body, cl.delivered_at AS delivered_at, cl.resolved_at
+      FROM contact_log cl
+      JOIN accounts a ON a.id = cl.account_id
+      JOIN persons p ON p.id = a.holder_person_id
+      WHERE cl.club_id = ${clubId}
+      ORDER BY cl.delivered_at DESC
+      LIMIT ${limit}
+    `)
     return rows.rows.map((r) => ({
       id: r.id,
       accountId: r.account_id,
       holderApellido: r.holderApellido,
       holderNombre: r.holderNombre,
-      totalCents: decimalToCents(r.total),
-      cantidadCuotas: r.cantidad_cuotas,
-      montoCuotaCents: decimalToCents(r.monto_cuota),
-      primeraFecha: r.primera_fecha,
-      status: r.status,
-      motivo: r.motivo,
-      createdAt: new Date(r.created_at),
-      pagadoDesdeInicioCents: decimalToCents(r.pagado),
+      channel: r.channel,
+      kind: r.kind,
+      ruleName: r.rule_name,
+      body: r.body,
+      deliveredAt: new Date(r.delivered_at),
+      resolvedAt: r.resolved_at ? new Date(r.resolved_at) : null,
     }))
   })
 }
-
-export type Coordinador = { userId: string; nombre: string; apellido: string; sport: string }
 
 /**
  * Usuarios con rol coordinador, agrupados por deporte (el scope del rol es

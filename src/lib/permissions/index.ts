@@ -29,16 +29,17 @@ export type Permission =
   | 'cobranzas.conciliar'
   | 'morosidad.ver'
   | 'morosidad.configurar'
+  | 'notificaciones.ver'
 
 export type Scope = { kind: 'club' } | { kind: 'team'; teamId: string }
 
 const ROLE_PERMISSIONS: Partial<Record<RoleKind, Permission[]>> = {
-  presidente: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'morosidad.ver'],
-  secretaria: ['personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'cuotas.ver'],
-  tesorero: ['personas.ver', 'categorias.ver', 'calendario.ver', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'cobranzas.registrar', 'cobranzas.conciliar', 'morosidad.ver', 'morosidad.configurar'],
-  coordinador: ['personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
-  entrenador: ['personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team (plantel)
-  manager: ['personas.ver', 'categorias.ver', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
+  presidente: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'morosidad.ver'],
+  secretaria: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'cuotas.ver'],
+  tesorero: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'calendario.ver', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'cobranzas.registrar', 'cobranzas.conciliar', 'morosidad.ver', 'morosidad.configurar'],
+  coordinador: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
+  entrenador: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team (plantel)
+  manager: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
 }
 
 export class PermissionError extends Error {

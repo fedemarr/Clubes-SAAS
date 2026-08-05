@@ -8,6 +8,7 @@ import { checkPermission } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import {
   deudoresMorosidad,
+  historialContactos,
   listarPlantillas,
   listarPlanesDePago,
   listarReglasCobranza,
@@ -50,13 +51,14 @@ export default async function MorosidadPage({
 
   const puedeConfigurar = await checkPermission('morosidad.configurar', { kind: 'club' }, slug)
 
-  const [resumen, reglas, plantillas, sugerencias, planes, deudores] = await Promise.all([
+  const [resumen, reglas, plantillas, sugerencias, planes, deudores, historial] = await Promise.all([
     resumenMorosidad(ctx.clubId),
     listarReglasCobranza(ctx.clubId),
     listarPlantillas(ctx.clubId),
     listarSugerenciasPendientes(ctx.clubId),
     listarPlanesDePago(ctx.clubId),
     deudoresMorosidad(ctx.clubId, { top: 500 }),
+    historialContactos(ctx.clubId, { limit: 50 }),
   ])
 
   const maxEvolucion = resumen.evolucionMensual.reduce((acc, e) => Math.max(acc, e.deudaCents), 0)
@@ -224,6 +226,11 @@ export default async function MorosidadPage({
         sugerencias={sugerencias.map((s) => ({
           ...s,
           deliveredAt: s.deliveredAt.toISOString(),
+        }))}
+        historial={historial.map((h) => ({
+          ...h,
+          deliveredAt: h.deliveredAt.toISOString(),
+          resolvedAt: h.resolvedAt ? h.resolvedAt.toISOString() : null,
         }))}
       />
     </main>

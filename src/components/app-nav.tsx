@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  Bell,
   CalendarDays,
   HandCoins,
   LayoutDashboard,
@@ -14,7 +15,15 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type NavIcon = 'dashboard' | 'personas' | 'categorias' | 'calendario' | 'cuotas' | 'cobranzas' | 'morosidad'
+export type NavIcon =
+  | 'dashboard'
+  | 'personas'
+  | 'categorias'
+  | 'calendario'
+  | 'cuotas'
+  | 'cobranzas'
+  | 'morosidad'
+  | 'notificaciones'
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -24,6 +33,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   cuotas: Wallet,
   cobranzas: HandCoins,
   morosidad: AlertTriangle,
+  notificaciones: Bell,
 }
 
 export type NavItem = {

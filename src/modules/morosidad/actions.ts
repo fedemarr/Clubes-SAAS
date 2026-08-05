@@ -10,6 +10,7 @@ import {
   eliminarReglaSchema,
   guardarPlantillaSchema,
   guardarReglaCobranzaSchema,
+  planIdSchema,
   resolverSugerenciaSchema,
 } from './schemas'
 import { planDePago, type ReglaCobranza } from './service'
@@ -233,6 +234,70 @@ export async function crearPlanDePago(clubSlug: string, input: unknown): Promise
       { userId: ctx.userId },
     )
     return { ok: true, data: { id } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+/**
+ * Cierra un plan de pago con estado final "cancelado". No elimina nada:
+ * el plan y sus cuotas quedan auditables en contact_log/ledger.
+ */
+export async function cancelarPlanDePago(clubSlug: string, input: unknown): Promise<ActionResult<null>> {
+  const parsed = planIdSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('morosidad.configurar', { kind: 'club' }, clubSlug)
+    await withTenant(
+      ctx.clubId,
+      async ({ tx, audit }) => {
+        const { rows } = await tx.execute<{ id: string }>(sql`
+          UPDATE payment_plans SET status = 'cancelado'
+          WHERE id = ${parsed.data.id} AND club_id = ${ctx.clubId} AND status = 'activo'
+          RETURNING id
+        `)
+        const plan = rows[0]
+        if (!plan) throw new Error('No existe ese plan activo.')
+        await audit('payment_plans', plan.id, 'custom', { action: 'cancelar_plan' })
+      },
+      { userId: ctx.userId },
+    )
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+/**
+ * Marca un plan como "completado" solo si el saldo pendiente ya está pago
+ * (pagadoDesdeInicio >= total). El cierre automático se puede agregar en el
+ * runner; acá el tesorero lo confirma a mano.
+ */
+export async function marcarPlanCompletado(clubSlug: string, input: unknown): Promise<ActionResult<null>> {
+  const parsed = planIdSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('morosidad.configurar', { kind: 'club' }, clubSlug)
+    await withTenant(
+      ctx.clubId,
+      async ({ tx, audit }) => {
+        const { rows } = await tx.execute<{ id: string; total: string; pagado: string }>(sql`
+          UPDATE payment_plans pp
+          SET status = 'completado'
+          WHERE pp.id = ${parsed.data.id} AND pp.club_id = ${ctx.clubId} AND pp.status = 'activo'
+            AND (SELECT COALESCE(SUM(CASE WHEN le.direction = 'credito' THEN le.amount ELSE 0 END), 0)
+                 FROM ledger_entries le WHERE le.account_id = pp.account_id AND le.booked_at >= pp.created_at) >= pp.total
+          RETURNING pp.id, pp.total, pp.created_at
+        `)
+        const plan = rows[0]
+        if (!plan) throw new Error('El plan todavía tiene saldo impago.')
+        await audit('payment_plans', plan.id, 'custom', { action: 'completar_plan' })
+      },
+      { userId: ctx.userId },
+    )
+    return { ok: true, data: null }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
   }

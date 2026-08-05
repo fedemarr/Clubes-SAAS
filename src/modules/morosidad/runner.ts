@@ -3,6 +3,7 @@ import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { formatARS } from '@/lib/money'
+import { sendMail } from '@/lib/notifications/mail'
 import { emitirNotificaciones, type NotificacionInput } from '@/lib/notifications/emit'
 import { evaluarReglasCobranza } from './service'
 import {
@@ -13,10 +14,13 @@ import {
   plantillasPorKey,
 } from './queries'
 
+type MailPendiente = { to: string; subject: string; html: string }
+
 export type ResultadoEjecucionCobranza = {
   mensajes: number
   avisosCoordinador: number
   sugerencias: number
+  mailsEnviados: number
   omitidos: number
   porMotivo: Record<string, number>
 }
@@ -44,7 +48,7 @@ export async function ejecutarCobranzaCore(clubId: string): Promise<ResultadoEje
   ])
   const activas = reglas.filter((r) => r.enabled)
   if (activas.length === 0) {
-    return { mensajes: 0, avisosCoordinador: 0, sugerencias: 0, omitidos: deudores.length, porMotivo: { 'sin reglas activas': deudores.length } }
+    return { mensajes: 0, avisosCoordinador: 0, sugerencias: 0, mailsEnviados: 0, omitidos: deudores.length, porMotivo: { 'sin reglas activas': deudores.length } }
   }
 
   const maxDedupe = Math.max(1, ...activas.map((r) => r.dedupeDias))
@@ -85,6 +89,7 @@ export async function ejecutarCobranzaCore(clubId: string): Promise<ResultadoEje
     clubId,
     async ({ tx, audit }) => {
       const notif: NotificacionInput[] = []
+      const mailsPendientes: MailPendiente[] = []
       let mensajes = 0
       let avisosCoordinador = 0
       let sugerencias = 0
@@ -102,6 +107,12 @@ export async function ejecutarCobranzaCore(clubId: string): Promise<ResultadoEje
               body: s.body ?? '',
               data: { accountId: s.accountId, ruleId: s.ruleId },
             })
+          }
+          if (s.channel === 'mail') {
+            // El canal mail sí entrega afuera: se envían después del commit
+            // para no tener la transacción abierta durante la llamada HTTP.
+            const to = holderPorCuenta.get(s.accountId)?.destino?.email
+            if (to) mailsPendientes.push({ to, subject: s.name, html: s.body ?? '' })
           }
         } else if (s.channel === 'coordinador') {
           const d = holderPorCuenta.get(s.accountId)
@@ -135,13 +146,30 @@ export async function ejecutarCobranzaCore(clubId: string): Promise<ResultadoEje
       }
 
       if (notif.length > 0) await emitirNotificaciones(tx, clubId, notif)
-      return { mensajes, avisosCoordinador, sugerencias }
+      return { mensajes, avisosCoordinador, sugerencias, mailsPendientes }
     },
     { userId: null },
   )
 
+  for (const m of resultado.mailsPendientes) {
+    try {
+      await sendMail({ to: m.to, subject: m.subject, html: m.html })
+    } catch (err) {
+      // El disparo quedó registrado en contact_log igual; el mail real es
+      // best-effort (fallback a consola sin RESEND_API_KEY).
+      console.error(`[cobranza:mail] falló el envío a ${m.to}`, err)
+    }
+  }
+
   const porMotivo: Record<string, number> = {}
   for (const o of omitidos) porMotivo[o.motivo] = (porMotivo[o.motivo] ?? 0) + 1
 
-  return { ...resultado, omitidos: omitidos.length, porMotivo }
+  return {
+    mensajes: resultado.mensajes,
+    avisosCoordinador: resultado.avisosCoordinador,
+    sugerencias: resultado.sugerencias,
+    mailsEnviados: resultado.mailsPendientes.length,
+    omitidos: omitidos.length,
+    porMotivo,
+  }
 }

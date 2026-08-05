@@ -49,3 +49,9 @@ export const crearPlanDePagoSchema = z.object({
 })
 
 export type CrearPlanDePagoInput = z.infer<typeof crearPlanDePagoSchema>
+
+export const planIdSchema = z.object({
+  id: z.string().uuid(),
+})
+
+export type PlanIdInput = z.infer<typeof planIdSchema>
