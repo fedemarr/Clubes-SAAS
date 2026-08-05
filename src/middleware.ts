@@ -5,7 +5,18 @@ import { clubs, personRoles, persons } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { auth } from '@/lib/auth/config'
 
-const RESERVED_FIRST_SEGMENT = new Set(['api', 'login', 'registro', 'recuperar', 'favicon.ico'])
+const RESERVED_FIRST_SEGMENT = new Set([
+  'api',
+  'login',
+  'registro',
+  'recuperar',
+  'favicon.ico',
+  'icon.svg',
+  'sw.js',
+  'manifest.webmanifest',
+  'icons',
+  'offline',
+])
 
 /**
  * Resuelve el club por el segmento [club] de la URL y, si hay sesión,
@@ -66,5 +77,5 @@ export default auth(async function middleware(req) {
 
 export const config = {
   runtime: 'nodejs',
-  matcher: ['/((?!api|_next|favicon.ico|login|registro|recuperar).*)'],
+  matcher: ['/((?!api|_next|favicon.ico|icon.svg|sw.js|manifest.webmanifest|icons|login|registro|recuperar).*)'],
 }

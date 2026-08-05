@@ -33,6 +33,16 @@ export type Permission =
 
 export type Scope = { kind: 'club' } | { kind: 'team'; teamId: string }
 
+/** Roles con acceso al backoffice (staff). El resto (jugador, tutor, etc.) va al portal. */
+export const STAFF_ROLES: ReadonlySet<RoleKind> = new Set<RoleKind>([
+  'presidente',
+  'secretaria',
+  'tesorero',
+  'coordinador',
+  'entrenador',
+  'manager',
+])
+
 const ROLE_PERMISSIONS: Partial<Record<RoleKind, Permission[]>> = {
   presidente: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'morosidad.ver'],
   secretaria: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'cuotas.ver'],
@@ -40,6 +50,8 @@ const ROLE_PERMISSIONS: Partial<Record<RoleKind, Permission[]>> = {
   coordinador: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
   entrenador: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team (plantel)
   manager: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'calendario.ver', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar'], // scope: su team
+  tutor: ['notificaciones.ver'],
+  jugador: ['notificaciones.ver'],
 }
 
 export class PermissionError extends Error {
@@ -58,26 +70,21 @@ export type PermissionContext = {
 }
 
 /**
- * Helper obligatorio en toda action y toda página (sección 7 del brief).
- * Tira PermissionError si no hay sesión, si el club no existe, o si
- * ningún rol vigente del actor en ese club cubre el permiso (y el scope,
- * si es de team). Las actions atrapan el error y devuelven
- * { ok: false, error }; nunca lo dejan llegar al cliente sin envolver.
+ * Contexto de la persona en un club, sin exigir ningún permiso. Devuelve
+ * null si no hay sesión, el club no existe o la persona no tiene un rol
+ * vigente. Lo usan el layout (para decidir shell staff vs portal) y
+ * requirePermission, que encima exige que el rol cubra el permiso.
  */
-export async function requirePermission(
-  permission: Permission,
-  scope: Scope,
-  clubSlug: string,
-): Promise<PermissionContext> {
+export async function rolesEnClub(clubSlug: string): Promise<PermissionContext | null> {
   const session = await auth()
-  if (!session?.user?.id) throw new PermissionError(permission)
+  if (!session?.user?.id) return null
 
   const [club] = await db
     .select()
     .from(clubs)
     .where(and(eq(clubs.slug, clubSlug), isNull(clubs.deletedAt)))
     .limit(1)
-  if (!club) throw new PermissionError(permission)
+  if (!club) return null
 
   const today = new Date().toISOString().slice(0, 10)
   const userId = session.user.id
@@ -97,14 +104,7 @@ export async function requirePermission(
       )
   })
 
-  const matching = activeRoles.filter((r) => {
-    const perms = ROLE_PERMISSIONS[r.role] ?? []
-    if (!perms.includes(permission)) return false
-    if (scope.kind === 'team' && r.scopeTeamId && r.scopeTeamId !== scope.teamId) return false
-    return true
-  })
-
-  if (matching.length === 0 || !activeRoles[0]) throw new PermissionError(permission)
+  if (activeRoles.length === 0) return null
 
   return {
     clubId: club.id,
@@ -113,6 +113,33 @@ export async function requirePermission(
     roles: activeRoles.map((r) => r.role),
     scopeTeamIds: [...new Set(activeRoles.map((r) => r.scopeTeamId).filter((id): id is string => Boolean(id)))],
   }
+}
+
+/**
+ * Helper obligatorio en toda action y toda página (sección 7 del brief).
+ * Tira PermissionError si no hay sesión, si el club no existe, o si
+ * ningún rol vigente del actor en ese club cubre el permiso (y el scope,
+ * si es de team). Las actions atrapan el error y devuelven
+ * { ok: false, error }; nunca lo dejan llegar al cliente sin envolver.
+ */
+export async function requirePermission(
+  permission: Permission,
+  scope: Scope,
+  clubSlug: string,
+): Promise<PermissionContext> {
+  const ctx = await rolesEnClub(clubSlug)
+  if (!ctx) throw new PermissionError(permission)
+
+  const matching = ctx.roles.filter((r) => {
+    const perms = ROLE_PERMISSIONS[r] ?? []
+    if (!perms.includes(permission)) return false
+    if (scope.kind === 'team' && !ctx.scopeTeamIds.includes(scope.teamId)) return false
+    return true
+  })
+
+  if (matching.length === 0) throw new PermissionError(permission)
+
+  return ctx
 }
 
 /**

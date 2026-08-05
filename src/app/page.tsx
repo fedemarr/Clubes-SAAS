@@ -1,14 +1,22 @@
 import Link from 'next/link'
-import { and, asc, eq, gte, isNull, or } from 'drizzle-orm'
+import { asc, isNull } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { ArrowRight, Shield, UserX } from 'lucide-react'
 import { db } from '@/db/client'
-import { clubs, personRoles, persons } from '@/db/schema'
-import { withTenant } from '@/db/tenant'
+import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
+import { rolesEnClub, STAFF_ROLES } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
+
+type ClubEntrada = {
+  slug: string
+  name: string
+  logoUrl: string | null
+  timezone: string
+  esStaff: boolean
+}
 
 export default async function Home() {
   const session = await auth()
@@ -17,31 +25,27 @@ export default async function Home() {
   // clubs no tiene club_id -> no pasa por RLS, se puede leer directo.
   const allClubs = await db.select().from(clubs).where(isNull(clubs.deletedAt)).orderBy(asc(clubs.name))
 
-  // persons/person_roles tienen RLS forzado: para saber en qué clubes está
-  // el usuario hay que preguntar por club (withTenant), nunca sin contexto.
-  const misClubes = []
+  // persons/person_roles tienen RLS forzado: hay que preguntar por club
+  // (withTenant). Por cada club, el usuario entra como staff (dashboard) o
+  // como socio (portal), según sus roles vigentes.
+  const misClubes: ClubEntrada[] = []
   for (const club of allClubs) {
-    const activo = await withTenant(club.id, async ({ tx }) => {
-      const today = new Date().toISOString().slice(0, 10)
-      const [row] = await tx
-        .select({ id: persons.id })
-        .from(persons)
-        .innerJoin(personRoles, eq(personRoles.personId, persons.id))
-        .where(
-          and(
-            eq(persons.clubId, club.id),
-            eq(persons.userId, session.user?.id),
-            isNull(persons.deletedAt),
-            or(isNull(personRoles.validTo), gte(personRoles.validTo, today)),
-          ),
-        )
-        .limit(1)
-      return row
-    })
-    if (activo) misClubes.push(club)
+    const ctx = await rolesEnClub(club.slug)
+    if (ctx) {
+      misClubes.push({
+        slug: club.slug,
+        name: club.name,
+        logoUrl: club.logoUrl,
+        timezone: club.timezone,
+        esStaff: ctx.roles.some((r) => STAFF_ROLES.has(r)),
+      })
+    }
   }
 
-  if (misClubes.length === 1) redirect(`/${misClubes[0].slug}/dashboard`)
+  if (misClubes.length === 1) {
+    const c = misClubes[0]!
+    redirect(`/${c.slug}/${c.esStaff ? 'dashboard' : 'portal'}`)
+  }
 
   return (
     <main className="relative flex min-h-dvh flex-col items-center justify-center bg-background px-4 py-12">
@@ -81,8 +85,8 @@ export default async function Home() {
             <h1 className="text-center text-sm text-muted-foreground">Elegí tu club</h1>
             {misClubes.map((club) => (
               <Link
-                key={club.id}
-                href={`/${club.slug}/dashboard`}
+                key={club.slug}
+                href={`/${club.slug}/${club.esStaff ? 'dashboard' : 'portal'}`}
                 className="group flex items-center gap-3 rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-primary/40"
               >
                 {club.logoUrl && (
@@ -91,7 +95,9 @@ export default async function Home() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold tracking-tight">{club.name}</p>
-                  <p className="text-xs text-muted-foreground">{club.timezone}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {club.esStaff ? 'Panel de gestión' : 'Portal del socio'} · {club.timezone}
+                  </p>
                 </div>
                 <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </Link>

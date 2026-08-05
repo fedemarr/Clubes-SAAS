@@ -1,14 +1,17 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { Bell, Home, IdCard, Wallet } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
 import { checkPermission } from '@/lib/permissions'
+import { rolesEnClub, STAFF_ROLES } from '@/lib/permissions'
 import { brandTokens } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { AppNav, type NavItem } from '@/components/app-nav'
 import { SignOutButton } from '@/components/sign-out-button'
+import { MemberRedirect } from './MemberRedirect'
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -18,6 +21,56 @@ const NAV: NavItem[] = [
   { href: '/cuotas', label: 'Cuotas', icon: 'cuotas' },
   { href: '/notificaciones', label: 'Notificaciones', icon: 'notificaciones' },
 ]
+
+const PORTAL_NAV = [
+  { href: '/portal', label: 'Inicio', icon: Home },
+  { href: '/portal/carnet', label: 'Carnet', icon: IdCard },
+  { href: '/portal/pagos', label: 'Pagos', icon: Wallet },
+  { href: '/notificaciones', label: 'Notificaciones', icon: Bell },
+]
+
+function PortalShell({ slug, clubName, logoUrl, timezone, children }: {
+  slug: string
+  clubName: string
+  logoUrl: string | null
+  timezone: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="min-h-dvh bg-background">
+      <header className="sticky top-0 z-30 border-b bg-background/90 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" width={26} height={26} className="rounded-full ring-1 ring-foreground/10" />
+            )}
+            <Link href={`/${slug}/portal`} className="truncate text-sm font-semibold tracking-tight">
+              {clubName}
+            </Link>
+            <span className="hidden text-[11px] text-muted-foreground sm:inline">{timezone}</span>
+          </div>
+          <SignOutButton />
+        </div>
+        <div className="mx-auto max-w-3xl overflow-x-auto px-3">
+          <div className="flex items-center gap-1 py-1.5">
+            {PORTAL_NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={`/${slug}${item.href}`}
+                className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <item.icon className="size-4" />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-3xl px-4 py-6 lg:py-8">{children}</main>
+    </div>
+  )
+}
 
 export default async function ClubLayout({
   children,
@@ -42,6 +95,27 @@ export default async function ClubLayout({
 
   if (!club) {
     notFound()
+  }
+
+  const ctx = await rolesEnClub(slug)
+  if (!ctx) notFound()
+
+  const esStaff = ctx.roles.some((r) => STAFF_ROLES.has(r))
+  if (!esStaff) {
+    // Shell del portal para socios/tutores (M6).
+    return (
+      <div style={brandTokens(club.branding?.primary ?? '#111827')} className="min-h-dvh bg-background">
+        <MemberRedirect />
+        <PortalShell
+          slug={slug}
+          clubName={club.name}
+          logoUrl={club.logoUrl}
+          timezone={club.timezone}
+        >
+          {children}
+        </PortalShell>
+      </div>
+    )
   }
 
   const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)

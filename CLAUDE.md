@@ -1,52 +1,57 @@
 ## Objective
-- **M5 · Morosidad y comunicaciones (brief)** completo y desplegado: panel de morosidad por antigüedad, motor de reglas de cobranza configurables con plantillas y dedupe, runner manual + cron diario, planes de pago, seed de reglas/plantillas por defecto. M4 quedó cerrado y pusheado.
+- **M6 · Portal del socio y del padre (brief)** en curso: PWA instalable (hecha), login unificado con desvío por rol a `/[club]/portal` (hecho), home del portal con próximo evento + estado de cuenta + botón de pago MP (hecho), carnet digital con QR rotativo (hecho), notificaciones push (falta), subida de documentos (falta). M5 quedó cerrado en `6a16c2d`.
 
 ## Important Details
-- **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `bb72c04` (M5 fino). Previos `d55fc8a` (M5), `6292e2b`, `31291fa`, `7b938ca` también pusheados.
-- **Base Neon única**: producción y dev comparten la misma base. `npm run db:rls` aplicó la sección 11 de M5 (`message_templates`, `cobranza_rules`, `contact_log`, `payment_plans`) y `npm run db:seed:m5` sembró reglas/plantillas por defecto en los-cedros y demo-fc. No hace falta `.env.production.local` ni `db:rls:prod`.
-- **Credenciales seed**: password `Cambiar123!`; emails `<rol>@<slug>.test`; slugs `los-cedros`, `demo-fc`.
+- **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `6a16c2d` (M5 gaps). Previos: `bb72c04`, `d55fc8a`, `6292e2b`, `31291fa`, `7b938ca`.
+- **Base Neon única**: producción y dev comparten la misma base. Secciones 10–11 de RLS (`notifications`, `message_templates`, `cobranza_rules`, `contact_log`, `payment_plans`, `debito_lotes`) aplicadas. Seed M5 aplicado a los-cedros y demo-fc.
+- **Credenciales seed**: password `Cambiar123!`; emails `<rol>@<slug>.test`; slugs `los-cedros`, `demo-fc`. En los-cedros solo `tutor1@los-cedros.test` tiene login de familia (cuenta "Familia O'Connell", saldo 0).
 - **Regla de dinero**: cents vía `src/lib/money.ts` (`decimalToCents`/`centsToDecimal`/`formatARS`); base `numeric(14,2)`.
 - **Patrón M5 (precedente M2.2/M4.4)**: las tablas transversales de dominio viven en `drizzle/rls.sql`, no en `schema.ts`, y se leen con SQL crudo (`tx.execute` con `.rows`) porque no hay builder tipado de Drizzle. Los settings RLS de `withTenant` cubren los INSERT/UPDATE.
-- **Reglas de negocio M5 (service puro, 20 tests)**: silencio nocturno 21–9 (timezone `America/Argentina/Buenos_Aires`); máximo 1 mensaje por cuenta por semana — reglas de mensaje se bloquean entre sí, `coordinador`/`suspension` deduplican por su propia regla; mensajes al tutor pagador, jamás al menor; **la suspensión nunca es automática** (solo sugiere, `resolved_at` la cierra).
-- **Runner sin sesión**: `src/modules/morosidad/runner.ts` tiene `ejecutarCobranzaCore(clubId)` — lo llaman la Server Action (con `morosidad.ver`) y el cron de Vercel (`/api/cron/cobranza`, diario 12:00 UTC = 09:00 ARG). Seguridad del cron: si `CRON_SECRET` está seteado exige `Authorization: Bearer <secret>`; si no, exige header `x-vercel-cron`.
-- **Patrones firmes**: `withTenant(clubId, fn, actor?)` + `ctx.audit(entity, entityId, action, diff?)`; `audit()` solo acepta `'create' | 'update' | 'delete' | 'custom'` (acciones custom van como `audit(..., 'custom', { action: '...' })`); `requirePermission`/`checkPermission`; Button Base UI con prop `render`; params del app-router son `Promise` (`await params`); `tx.execute` devuelve `QueryResult` con `.rows`.
-- **Trampa Base UI select**: `onValueChange` pasa `string | null` → coerce `v ?? ''` antes de guardar en estado string (MorosidadPanel).
-- **Enums útiles**: `chargeStatus` pendiente/parcial/pagado/vencido/anulado; `membershipStatus` pendiente/activa/suspendida/baja; `relationshipKind` tutor_de/conyuge_de/hermano_de; `entryDirection` debito/credito.
+- **Patrones firmes**: `withTenant(clubId, fn, actor?)` + `ctx.audit(...)`; `audit()` solo acepta `'create' | 'update' | 'delete' | 'custom'`; `requirePermission`/`checkPermission`; Button Base UI con prop `render`; params del app-router son `Promise` (`await params`); `tx.execute` devuelve `QueryResult` con `.rows` (jamás `const [fila] = await tx.execute(...)`).
+- **Roles staff vs socio**: `STAFF_ROLES` = presidente, secretaria, tesorero, coordinador, entrenador, manager. `rolesEnClub(slug)` (nuevo, en `src/lib/permissions/index.ts`) devuelve el `PermissionContext` sin exigir permiso — lo usan el layout `(app)/[club]` (elige shell staff vs portal), `requirePermission`, `src/app/page.tsx` (redirect a dashboard o portal) y `[club]/page.tsx`. Los que no son staff van a `/portal` y jamás al backoffice (`MemberRedirect`).
+- **Shell del portal**: `(app)/[club]/layout.tsx` ramifica: staff → sidebar + AppNav; socio → `PortalShell` (header móvil con nav Inicio/Carnet/Pagos/Notificaciones, `max-w-3xl`). Las páginas del portal (`datosPortal`, `datosCarnet`, `ultimosMovimientosPortal`) NO piden permisos de staff: el acceso ya lo acota el layout + RLS, y arrancan siempre desde `ctx.personId`.
+- **Pago portal**: `crearLinkPago` (action) valida que la cuenta pertenezca al grupo familiar del socio (persona + `tutor_de`) y reusa `crearPreferenciaPago` de `src/modules/cobranzas/mercadopago.ts` (mismo `externalRef` `${clubId}:${accountId}:${periodo}` → el webhook acredita solo). Sin `MERCADOPAGO_ACCESS_TOKEN` devuelve link dev.
+- **Carnet QR rotativo**: `/api/portal/carnet-token?club=<slug>` firma un JWT HS256 de 5 min (`clubId`, `sub=personId`) con `PORTAL_QR_SECRET` (fallback `AUTH_SECRET`/`CRON_SECRET`); `QrCarnet` (cliente) lo refresca cada 30s y grafica con `qrcode`. El secreto nunca viaja al cliente.
+- **Notificaciones para socios**: `notificaciones.ver` fue dado también a `tutor` y `jugador` (`ROLE_PERMISSIONS`); la página/actions ya filtran por `user_id`, así el socio lee su bandeja. El push (faltante M6) debería seguir ese patrón.
+- **PWA**: `src/app/manifest.ts` (`/manifest.webmanifest`), `public/sw.js` (network-first + fallback 503), `public/icons/{icon,maskable}.svg`, `src/app/icon.svg`, `src/app/PwaRegister.tsx` (registra SW solo en prod), `src/app/offline/page.tsx`, `next.config.ts` (headers no-cache `/sw.js`), middleware con `RESERVED_FIRST_SEGMENT` (`api`, `login`, `registro`, `recuperar`, `favicon.ico`, `icon.svg`, `sw.js`, `manifest.webmanifest`, `icons`, `offline`).
+- **Enums útiles**: `chargeStatus` pendiente/parcial/pagado/vencido/anulado; `membershipStatus` pendiente/activa/suspendida/baja; `relationshipKind` tutor_de/conyuge_de/hermano_de (tutor → hijo por `relationships.personId = tutor`); `eventKind` entrenamiento/partido/cena/asamblea/buffet.
+- **Dependencia nueva**: `qrcode` + `@types/qrcode` (browser `QRCode.toDataURL`).
+- **Comando utilidad**: `npx tsx --env-file=.env.local probe.ts` (raíz, borrar tras uso). `npx eslint` corre sobre todo el repo. Suite: 115 tests en 7 archivos.
 
 ## Work State
 ### Completed
-- **M4.4 débito automático** (pusheado `6292e2b`): `debito_lotes`, CBU en `persons.custom.debitoCbu`, lote CSV genérico, acreditación ledger FIFO, rechazos con asiento inverso, `DebitoPanel`, `/cuotas/debito`.
-- **M5 · Service puro**: `src/modules/morosidad/service.ts` — tramos, silencio, plantillas, `evaluarReglasCobranza`, `planDePago` (división exacta con resto de a 1 centavo), `avancePlan`. 20 tests OK (113 suite).
-- **M5 · Queries**: `src/modules/morosidad/queries.ts` — `deudoresMorosidad`, `resumenMorosidad`, `listarReglasCobranza`, `listarPlantillas`, `plantillasPorKey`, `listarContactosRecientes` (dedupe), `listarSugerenciasPendientes`, `listarPlanesDePago`, `coordinadoresPorDeporte` — SQL crudo sobre rls.sql.
-- **M5 · Schemas + Actions**: `schemas.ts` (Zod) + `actions.ts` — `guardarReglaCobranza`, `eliminarReglaCobranza` (desactiva), `guardarPlantilla` (upsert por key), `ejecutarCobranza` (envuelve el core con permiso), `resolverSugerencia`, `crearPlanDePago`.
-- **M5 · Runner + Cron**: `runner.ts` (`ejecutarCobranzaCore`, sin auth, notif `cobranza.recordatorio`/`aviso_coordinador`, registra en `contact_log`, agrega var `{{club}}`) + `src/app/api/cron/cobranza/route.ts` (itera todos los clubs) + `vercel.json` con cron `0 12 * * *`.
-- **M5 · Seed**: `src/db/seed-morosidad.ts` (`npm run db:seed:m5`, idempotente) — 2 plantillas (`recordatorio_amable`, `aviso_mail`) + 4 reglas (`Recordatorio amable` 5d whatsapp, `Aviso por mail` 15d, `Derivación a coordinador` 30d, `Sugerencia de suspensión` 60d) en los-cedros y demo-fc. Aplicado.
-- **M5 · UI**: `/cuotas/morosidad` (StatCards deuda total + 4 tramos, por deporte, evolución mensual, top20, alerta de sugerencias) + `MorosidadPanel` (ejecutar cobranza, CRUD reglas/plantillas, resolver sugerencias, crear planes). Enlaces en cobranzas y sidebar (icono `AlertTriangle`, `morosidad.ver`).
-- **Permisos**: `morosidad.ver` (presidente + tesorero), `morosidad.configurar` (tesorero).
-- **Verificación**: tsc/eslint/vitest (113)/build OK (ruta cron `141 B`). Commits `d55fc8a` y `bb72c04` pusheados.
+- **M5 cerrado** (push `6a16c2d`): canal mail real (`sendMail` post-commit, `mailsEnviados`), bandeja `/notificaciones` (actions `marcarLeida`/`marcarTodasLeidas` filtran por `user_id`), historial `contact_log`, planes de pago con progreso (`avancePlan`), tests del runner (dedupe + mails). Todo verificado (tsc/eslint/115 tests/build).
+- **M6 · PWA**: manifest + SW + iconos SVG (any + maskable) + `PwaRegister` + headers `/sw.js` + middleware + `/offline`. Verificado con build (ruta `/offline` estática).
+- **M6 · Login unificado + shell**: `rolesEnClub`, `STAFF_ROLES`, layout `(app)/[club]` ramificado (staff ↔ portal), `MemberRedirect` (socio que toca ruta de staff → `/portal`), `src/app/page.tsx` (redirect por club según rol → dashboard o portal), `[club]/page.tsx` index nuevo. `notificaciones.ver` para tutor/jugador.
+- **M6 · Portal (queries + actions + API)**: `src/modules/portal/queries.ts` (`personasDelMiembroTx`, `datosPortal`, `datosCarnet`, `ultimosMovimientosPortal` — todo dentro de un único `withTenant`, sin anidar), `actions.ts` (`crearLinkPago`, valida cuenta propia del grupo familiar), `/api/portal/carnet-token` (JWT rotativo).
+- **M6 · Páginas**: `/portal` (saludo, próximo evento formateado con timezone del club, tarjetas de cuenta con cargos abiertos y `PagoPortalButton`), `/portal/carnet` (tarjeta con foto/iniciales, nº socio, DNI, categorías, membresías, `QrCarnet`), `/portal/pagos` (cargos pendientes + botón MP + últimos movimientos debit/credito). Nav del portal en el shell.
+- **Verificación**: `npx tsc --noEmit`, `npx eslint`, `npm test` (115), `npm run build` — todos OK con las rutas `/portal`, `/portal/carnet`, `/portal/pagos`, `/api/portal/carnet-token`, `/offline`.
+- **Probe**: validado contra base real que `tutor1@los-cedros.test` (rol `tutor`, 1 hijo `tutor_de`) ve su cuenta "Familia O'Connell" con 2 movimientos. Borrado.
 
 ### Active
-- (none)
+- **M6 · Push notifications**: falta — probablemente Service Worker con `showNotification` + suscripción Web Push (VAPID). Evaluar si agregar tabla `push_subscriptions` (rls.sql sección 12) o reusar `notifications`.
+- **M6 · Subida de documentos**: falta — se conecta con M7 (tipos de documento, R2 con URLs firmadas). Probablemente esperar a M7 para hacerlo junto.
 
 ### Blocked
 - (none)
 
 ## Next Move
-1. **M6 · Portal del socio y del padre** (brief): PWA instalable, login unificado, home con próximo evento + estado de cuenta, botón de pago MP, carnet digital con QR rotativo, subida de documentos, notificaciones push.
-2. **M7 · Documentos y vencimientos**: tipos de documento, estados pendiente/vigente/vencido/rechazado, R2 con URLs firmadas, alertas 30/15/3 días.
-3. **M8 · Dashboards por rol**.
-4. (none)
+1. Push notifications del portal (SW + VAPID + suscripción por socio). 
+2. Subida de documentos del socio (o dejarla fusionada con M7).
+3. **M7 · Documentos y vencimientos**: tipos de documento, estados pendiente/vigente/vencido/rechazado, R2 con URLs firmadas, alertas 30/15/3 días.
+4. **M8 · Dashboards por rol**.
 5. (none)
 
 ## Relevant Files
-- `src/modules/morosidad/service.ts` + `service.test.ts`: motor puro M5 (tramos, silencio, reglas, plantillas, planes) — 20 tests OK.
-- `src/modules/morosidad/runner.ts`: `ejecutarCobranzaCore(clubId)` sin sesión — usado por la action y el cron.
-- `src/modules/morosidad/actions.ts`: actions con permiso (envuelven el core) + `schemas.ts` Zod.
-- `src/modules/morosidad/queries.ts`: panel + configuración + contactos + planes, SQL crudo sobre rls.sql.
-- `src/app/api/cron/cobranza/route.ts` + `vercel.json`: cron diario 12:00 UTC; seguridad por `CRON_SECRET` o header `x-vercel-cron`.
-- `src/db/seed-morosidad.ts` + script `db:seed:m5`: plantillas y reglas por defecto (idempotente).
-- `src/modules/morosidad/components/MorosidadPanel.tsx` + `src/app/(app)/[club]/cuotas/morosidad/page.tsx`: panel + página.
-- `drizzle/rls.sql`: sección 11 con las 4 tablas M5 (aplicada).
-- `src/lib/permissions/index.ts`: `morosidad.ver`, `morosidad.configurar`.
-- `src/lib/notifications/emit.ts`: `emitirNotificaciones(tx, clubId, [{userId, type, title, body, data}])`.
-- `src/lib/audit/index.ts`: `AuditAction` = `'create' | 'update' | 'delete' | 'custom'` — acciones custom en `diff.action`.
+- `src/lib/permissions/index.ts`: `rolesEnClub`, `STAFF_ROLES`, `requirePermission`/`checkPermission`, `ROLE_PERMISSIONS` con `notificaciones.ver` para tutor/jugador.
+- `src/app/(app)/[club]/layout.tsx`: shell staff vs `PortalShell` de socio + `MemberRedirect`.
+- `src/app/page.tsx` + `src/app/(app)/[club]/page.tsx`: post-login por rol → dashboard o portal.
+- `src/modules/portal/queries.ts`: `datosPortal`, `datosCarnet`, `ultimosMovimientosPortal`, `personasDelMiembroTx`.
+- `src/modules/portal/actions.ts`: `crearLinkPago` (Mercado Pago, reusa `crearPreferenciaPago`).
+- `src/app/api/portal/carnet-token/route.ts` + `src/modules/portal/components/QrCarnet.tsx`: QR rotativo (JWT HS256 + `qrcode`).
+- `src/modules/portal/components/PagoPortalButton.tsx` + páginas `src/app/(app)/[club]/portal/{page,carnet,pagos}/page.tsx`.
+- PWA: `src/app/manifest.ts`, `public/sw.js`, `public/icons/*.svg`, `src/app/icon.svg`, `src/app/PwaRegister.tsx`, `src/app/offline/page.tsx`, `next.config.ts`, `src/middleware.ts`.
+- `src/modules/cobranzas/mercadopago.ts`: `crearPreferenciaPago` (externalRef `${clubId}:${accountId}:${periodo}`).
+- `src/modules/notificaciones/`: bandeja que reusan los socios (`notificaciones.ver`).
+- `src/modules/morosidad/runner.ts` + `src/app/api/cron/cobranza/route.ts`: runner sin sesión + cron diario (M5).
+- `drizzle/rls.sql`: secciones 10–11 aplicadas.
