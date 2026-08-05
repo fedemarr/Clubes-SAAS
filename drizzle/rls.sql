@@ -358,3 +358,46 @@ CREATE POLICY tenant_isolation ON push_subscriptions
   WITH CHECK (club_id = current_club());
 CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_club_endpoint_uq ON push_subscriptions (club_id, endpoint);
 CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions (club_id, user_id);
+
+-- 13. Documentos y vencimientos (M7). document_types vive acá y no en
+--     schema.ts por el patrón M5: es configuración transversal del club
+--     (qué documentos exige, si vencen, cada cuánto avisar), no una entidad
+--     que la app edite a ciegas. documents, en cambio, ya es tabla de
+--     schema.ts (M1): acá solo se agregan las columnas de M7 que faltaban.
+--
+--     document_types: un registro por (club_id, kind) tomado del enum
+--     document_kind. alert_days son los días de antelación para el aviso de
+--     vencimiento (30/15/3 por defecto) — configurables por tipo.
+CREATE TABLE IF NOT EXISTS document_types (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  kind varchar(40) NOT NULL,
+  label varchar(120) NOT NULL,
+  requires_expiry boolean NOT NULL DEFAULT true,
+  alert_days integer[] NOT NULL DEFAULT '{30,15,3}',
+  enabled boolean NOT NULL DEFAULT true,
+  updated_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON document_types TO app_user;
+ALTER TABLE document_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_types FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON document_types;
+CREATE POLICY tenant_isolation ON document_types
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE UNIQUE INDEX IF NOT EXISTS document_types_club_kind_uq ON document_types (club_id, kind);
+
+-- Columnas de M7 sobre documents (base ya creada en la migración 0000).
+-- alerted_days = días de antelación ya avisados, para que el runner de
+-- alertas sea idempotente entre corridas diarias (30, 15, 3).
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_name varchar(255);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type varchar(120);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_size integer;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by uuid REFERENCES users(id);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS rejection_reason varchar(255);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS alerted_days integer[] NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS documents_club_status_idx ON documents (club_id, status);
+CREATE INDEX IF NOT EXISTS documents_club_uploaded_idx ON documents (club_id, uploaded_by);

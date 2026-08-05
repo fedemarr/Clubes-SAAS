@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   Bell,
   CalendarDays,
+  FileText,
   HandCoins,
   LayoutDashboard,
   AlertTriangle,
@@ -24,6 +25,7 @@ export type NavIcon =
   | 'cobranzas'
   | 'morosidad'
   | 'notificaciones'
+  | 'documentos'
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -34,6 +36,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   cobranzas: HandCoins,
   morosidad: AlertTriangle,
   notificaciones: Bell,
+  documentos: FileText,
 }
 
 export type NavItem = {

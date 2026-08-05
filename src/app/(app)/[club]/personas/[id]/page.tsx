@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CalendarClock, FileText, Pencil } from 'lucide-react'
+import { CalendarClock, Pencil } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
@@ -11,6 +11,7 @@ import { EstadoBadge } from '@/modules/personas/components/EstadoBadge'
 import { RolForm } from '@/modules/personas/components/RolForm'
 import { VinculoForm } from '@/modules/personas/components/VinculoForm'
 import { obtenerFamilia, obtenerHistorialAuditoria, obtenerPersona, obtenerRoles } from '@/modules/personas/queries'
+import { DocumentosPersonaTab } from '@/modules/documentos/components/DocumentosPersonaTab'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
@@ -42,6 +43,7 @@ export default async function FichaPersonaPage({
     return <main className="px-4 py-6 text-muted-foreground">No tenés permiso para ver esta ficha.</main>
   }
   const puedeEditar = await checkPermission('personas.editar', { kind: 'club' }, slug)
+  const puedeGestionarDocumentos = await checkPermission('documentos.gestionar', { kind: 'club' }, slug)
 
   const [club] = await db.select().from(clubs).where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt))).limit(1)
   if (!club) return null
@@ -114,10 +116,12 @@ export default async function FichaPersonaPage({
         )}
 
         {tabActivo === 'documentos' && (
-          <EmptyState
-            icon={FileText}
-            title="Documentación en camino"
-            description="Aptos médicos y documentos llegan con el módulo M7."
+          <DocumentosPersonaTab
+            clubId={club.id}
+            clubSlug={slug}
+            personId={id}
+            personNombre={`${persona.firstName} ${persona.lastName}`}
+            puedeGestionar={Boolean(puedeGestionarDocumentos)}
           />
         )}
 

@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/cobranza",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/documentos",
+      "schedule": "0 13 * * *"
     }
   ]
 }

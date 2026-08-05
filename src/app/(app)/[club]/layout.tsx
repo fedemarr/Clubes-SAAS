@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { Bell, Home, IdCard, Wallet } from 'lucide-react'
+import { Bell, FileText, Home, IdCard, Wallet } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { href: '/categorias', label: 'Categorías', icon: 'categorias' },
   { href: '/calendario', label: 'Calendario', icon: 'calendario' },
   { href: '/cuotas', label: 'Cuotas', icon: 'cuotas' },
+  { href: '/documentos', label: 'Documentos', icon: 'documentos' },
   { href: '/notificaciones', label: 'Notificaciones', icon: 'notificaciones' },
 ]
 
@@ -26,6 +27,7 @@ const PORTAL_NAV = [
   { href: '/portal', label: 'Inicio', icon: Home },
   { href: '/portal/carnet', label: 'Carnet', icon: IdCard },
   { href: '/portal/pagos', label: 'Pagos', icon: Wallet },
+  { href: '/portal/documentos', label: 'Documentos', icon: FileText },
   { href: '/notificaciones', label: 'Notificaciones', icon: Bell },
 ]
 

@@ -14,6 +14,7 @@ import {
 } from '@/db/schema'
 import type { eventKind, chargeStatus } from '@/db/schema'
 import { decimalToCents } from '@/lib/money'
+import { listarDocumentosTx, type DocumentoItem } from '@/modules/documentos/queries'
 
 /**
  * Portal del socio (M6). Las queries acá NO exigen permisos de staff: el
@@ -39,6 +40,23 @@ export function personasDelMiembroTx(tx: Tx, clubId: string, memberPersonId: str
 
 export async function personasDelMiembro(clubId: string, memberPersonId: string): Promise<string[]> {
   return withTenant(clubId, async ({ tx }) => personasDelMiembroTx(tx, clubId, memberPersonId))
+}
+
+export type PersonaGrupo = { id: string; nombre: string }
+
+/** Las personas del grupo familiar con su nombre, para los selects del portal. */
+export async function grupoFamiliar(clubId: string, memberPersonId: string): Promise<PersonaGrupo[]> {
+  return withTenant(clubId, async ({ tx }) => {
+    const personIds = await personasDelMiembroTx(tx, clubId, memberPersonId)
+    const personas = await tx
+      .select({ id: persons.id, firstName: persons.firstName, lastName: persons.lastName })
+      .from(persons)
+      .where(and(eq(persons.clubId, clubId), inArray(persons.id, personIds)))
+    return personas.map((p) => ({
+      id: p.id,
+      nombre: `${p.firstName} ${p.lastName}`.trim(),
+    }))
+  })
 }
 
 export type CargoPortal = {
@@ -356,5 +374,18 @@ export async function ultimosMovimientosPortal(clubId: string, memberPersonId: s
       bookedAt: m.bookedAt,
       source: m.paymentId ? 'pago' as const : m.reversesEntryId ? 'reversion' as const : m.chargeId ? 'cargo' as const : 'ajuste' as const,
     }))
+  })
+}
+
+/**
+ * Documentos del socio y de sus hijos a cargo (grupo familiar). Solo sus
+ * propios documentos: personIds sale de personasDelMiembroTx, nunca de un
+ * id libre. Reusa la query del módulo documentos con la variante Tx para no
+ * anidar withTenant.
+ */
+export async function misDocumentos(clubId: string, memberPersonId: string): Promise<DocumentoItem[]> {
+  return withTenant(clubId, async ({ tx }) => {
+    const personIds = await personasDelMiembroTx(tx, clubId, memberPersonId)
+    return listarDocumentosTx(tx, clubId, { personIds })
   })
 }

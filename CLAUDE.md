@@ -1,9 +1,9 @@
 ## Objective
-- **M6 · Portal del socio y del padre (brief)** casi completo: PWA (hecha), login unificado con desvío por rol (hecho), home con evento + estado de cuenta + pago MP (hecho), carnet con QR rotativo (hecho), notificaciones push (hechas: suscripción por socio + envío post-commit). Falta solo subida de documentos (se conecta con M7 — R2 + URLs firmadas). Portal pusheado en `331ecfc`; push en `6faae95`. M5 cerró en `6a16c2d`.
+- **M7 · Documentos y vencimientos** completo (listo para push): tipos de documento config por club, subida/descarga con R2 (URLs firmadas), revisión staff (aprobar/rechazar con motivo), estados pendiente/vigente/vencido/rechazado, alertas `alert_days` (30/15/3) con push post-commit, bandeja staff `/documentos`, config `/documentos/tipos`, tab en la ficha de persona y portal del socio (`/portal/documentos`). Verificado tsc/eslint/115 tests/build. M6 cerró en `331ecfc`; push M6 en `9e73ec6`; M5 en `6a16c2d`.
 
 ## Important Details
-- **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `6faae95` (M6 push). Previos: `331ecfc` (M6 portal), `6a16c2d` (M5), `bb72c04`, `d55fc8a`, `6292e2b`, `31291fa`, `7b938ca`.
-- **Base Neon única**: producción y dev comparten la misma base. Secciones 10–12 de RLS (`notifications`, `message_templates`, `cobranza_rules`, `contact_log`, `payment_plans`, `debito_lotes`, `push_subscriptions`) aplicadas. Seed M5 aplicado a los-cedros y demo-fc.
+- **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `9e73ec6` (M6 push). Previos: `6faae95`, `331ecfc` (M6 portal), `6a16c2d` (M5), `bb72c04`, `d55fc8a`, `6292e2b`, `31291fa`, `7b938ca`.
+- **Base Neon única**: producción y dev comparten la misma base. Secciones 10–13 de RLS (`notifications`, `message_templates`, `cobranza_rules`, `contact_log`, `payment_plans`, `debito_lotes`, `push_subscriptions`, `document_types`) aplicadas. Seed M5 y M7 (`db:seed:m7`) aplicados a los-cedros y demo-fc.
 - **Credenciales seed**: password `Cambiar123!`; emails `<rol>@<slug>.test`; slugs `los-cedros`, `demo-fc`. En los-cedros solo `tutor1@los-cedros.test` tiene login de familia (cuenta "Familia O'Connell", saldo 0).
 - **Regla de dinero**: cents vía `src/lib/money.ts` (`decimalToCents`/`centsToDecimal`/`formatARS`); base `numeric(14,2)`.
 - **Patrón M5 (precedente M2.2/M4.4)**: las tablas transversales de dominio viven en `drizzle/rls.sql`, no en `schema.ts`, y se leen con SQL crudo (`tx.execute` con `.rows`) porque no hay builder tipado de Drizzle. Los settings RLS de `withTenant` cubren los INSERT/UPDATE.
@@ -11,14 +11,16 @@
 - **Push M6 (canal post-commit, patrón `sendMail`)**: `ctx.onCommit(fn)` en `withTenant` acumula callbacks que corren SOLO si la tx commitea, best-effort (try/catch + `[withTenant:onCommit]`). `emitirNotificaciones(ctx: Pick<TenantCtx,'tx'|'onCommit'>, clubId, inputs)` escribe en `notifications` y programa `enviarPush` (dedupe idempotente por `{userId,type,title,data}`). `enviarPush(clubId, inputs)` corre post-commit, junta `push_subscriptions` por club + user_ids, `webpush.setVapidDetails` con `VAPID_SUBJECT`/`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`, limpia suscripciones 404/410; sin VAPID loguea `[push:dev]`. Keys VAPID + `NEXT_PUBLIC_VAPID_PUBLIC_KEY` en `.env.local` (gitignoreado).
 - **Suscripción push del socio**: `/api/portal/push/register` y `/api/portal/push/unregister` (POST `?club=<slug>`, usan `rolesEnClub` → `ctx.clubId`/`ctx.userId`); register hace upsert `ON CONFLICT (club_id, endpoint) DO UPDATE SET keys_*, user_agent, last_seen_at`. `PushSubscribeCard` (client) registra el SW si hace falta, pide permiso, suscribe con la key pública y postea; `public/sw.js` maneja `push` (payload JSON `{type,title,body,data,clubId}` → `showNotification`) y `notificationclick` (abre `/portal` o `/portal/pagos` según type). La card vive en `/notificaciones` (staff y socios la ven).
 - **Roles staff vs socio**: `STAFF_ROLES` = presidente, secretaria, tesorero, coordinador, entrenador, manager. `rolesEnClub(slug)` (nuevo, en `src/lib/permissions/index.ts`) devuelve el `PermissionContext` sin exigir permiso — lo usan el layout `(app)/[club]` (elige shell staff vs portal), `requirePermission`, `src/app/page.tsx` (redirect a dashboard o portal) y `[club]/page.tsx`. Los que no son staff van a `/portal` y jamás al backoffice (`MemberRedirect`).
-- **Shell del portal**: `(app)/[club]/layout.tsx` ramifica: staff → sidebar + AppNav; socio → `PortalShell` (header móvil con nav Inicio/Carnet/Pagos/Notificaciones, `max-w-3xl`). Las páginas del portal (`datosPortal`, `datosCarnet`, `ultimosMovimientosPortal`) NO piden permisos de staff: el acceso ya lo acota el layout + RLS, y arrancan siempre desde `ctx.personId`.
+- **Shell del portal**: `(app)/[club]/layout.tsx` ramifica: staff → sidebar + AppNav; socio → `PortalShell` (header móvil con nav Inicio/Carnet/Pagos/Documentos/Notificaciones, `max-w-3xl`). Las páginas del portal (`datosPortal`, `datosCarnet`, `ultimosMovimientosPortal`, `misDocumentos`) NO piden permisos de staff: el acceso ya lo acota el layout + RLS, y arrancan siempre desde `ctx.personId`.
 - **Pago portal**: `crearLinkPago` (action) valida que la cuenta pertenezca al grupo familiar del socio (persona + `tutor_de`) y reusa `crearPreferenciaPago` de `src/modules/cobranzas/mercadopago.ts` (mismo `externalRef` `${clubId}:${accountId}:${periodo}` → el webhook acredita solo). Sin `MERCADOPAGO_ACCESS_TOKEN` devuelve link dev.
 - **Carnet QR rotativo**: `/api/portal/carnet-token?club=<slug>` firma un JWT HS256 de 5 min (`clubId`, `sub=personId`) con `PORTAL_QR_SECRET` (fallback `AUTH_SECRET`/`CRON_SECRET`); `QrCarnet` (cliente) lo refresca cada 30s y grafica con `qrcode`. El secreto nunca viaja al cliente.
 - **Notificaciones para socios**: `notificaciones.ver` fue dado también a `tutor` y `jugador` (`ROLE_PERMISSIONS`); la página/actions ya filtran por `user_id`, así el socio lee su bandeja. El push sigue ese patrón (`emitirNotificaciones` con `userId`; `enviarPush` junta `push_subscriptions` por user).
 - **PWA**: `src/app/manifest.ts` (`/manifest.webmanifest`), `public/sw.js` (network-first + fallback 503 + handlers `push`/`notificationclick`), `public/icons/{icon,maskable}.svg`, `src/app/icon.svg`, `src/app/PwaRegister.tsx` (registra SW solo en prod), `src/app/offline/page.tsx`, `next.config.ts` (headers no-cache `/sw.js`), middleware con `RESERVED_FIRST_SEGMENT` (`api`, `login`, `registro`, `recuperar`, `favicon.ico`, `icon.svg`, `sw.js`, `manifest.webmanifest`, `icons`, `offline`).
 - **Enums útiles**: `chargeStatus` pendiente/parcial/pagado/vencido/anulado; `membershipStatus` pendiente/activa/suspendida/baja; `relationshipKind` tutor_de/conyuge_de/hermano_de (tutor → hijo por `relationships.personId = tutor`); `eventKind` entrenamiento/partido/cena/asamblea/buffet.
-- **Dependencia nueva**: `qrcode` + `@types/qrcode` (browser `QRCode.toDataURL`).
-- **Comando utilidad**: `npx tsx --env-file=.env.local probe.ts` (raíz, borrar tras uso). `npx eslint` corre sobre todo el repo. Suite: 115 tests en 7 archivos.
+- **M7 · R2 (URLs firmadas)**: `src/lib/storage/r2.ts` — `r2Configurado`/`r2Bucket`, `generarFileKey(clubId, ext)` → `documentos/{clubId}/{uuid}{ext}`, `firmarUrlSubida` (15 min, presigned PUT) y `firmarUrlDescarga` (5 min, presigned GET), `borrarObjeto` best-effort. Credenciales `R2_ACCOUNT_ID`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_BUCKET` en `.env.local`; sin ellas loguea `[r2:dev]` y la URL es null (el flujo igual termina con el documento pendiente).
+- **M7 · Documentos**: tipos de documento por club en `document_types` (`drizzle/rls.sql` sección 13, RLS, `UNIQUE (club_id, kind)`, `alert_days int[]`). `documents` (M1) ya tenía `document_kind`/`document_status` enums y `reviewed_by uuid REFERENCES users(id)` (NO persons) — el revisor se une contra `users`. **Arrays en SQL crudo**: el driver neon expande los arrays JS como record → pasar siempre literal `'{30,15,3}'::int[]`. Permisos: `documentos.ver` (todas las staff), `documentos.gestionar` (presidente/secretaria), `documentos.tipos` (presidente/secretaria). El socio usa `notificaciones.ver` (patrón M6) y valida el grupo familiar (`personasDelMiembroTx`) en `misDocumentos`/`iniciarSubidaDocumento`/`borrarDocumento`. El runner marca `vencido` y avisa umbrales con `alerted_days` idempotente (reset `'{}'` al aprobar); cron `/api/cron/documentos` en `vercel.json` a las 13:00 UTC.
+- **Dependencia nueva**: `qrcode` + `@types/qrcode` (browser `QRCode.toDataURL`); M7 agregó `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`.
+- **Comando utilidad**: `npx tsx --env-file=.env.local probe.ts` (raíz, borrar tras uso). `npx eslint` corre sobre todo el repo. Suite: 115 tests en 7 archivos. Seed de tipos: `npm run db:seed:m7` (idempotente, `db:seed-documentos.ts`).
 
 ## Work State
 ### Completed
@@ -30,26 +32,30 @@
 - **Verificación**: `npx tsc --noEmit`, `npx eslint`, `npm test` (115), `npm run build` — todos OK con las rutas del portal, push y PWA.
 - **Probe**: validado contra base real que `tutor1@los-cedros.test` (rol `tutor`, 1 hijo `tutor_de`) ve su cuenta "Familia O'Connell" con 2 movimientos. Borrado.
 - **M6 · Push notificaciones** (en `6faae95`): `push_subscriptions` en rls.sql sección 12 (aplicada); `TenantCtx.onCommit` + ejecución post-commit en `tenant.ts`; `src/lib/notifications/push.ts` (`enviarPush`) y `emit.ts` (`emitirNotificaciones({ tx, onCommit }, ...)`) — call sites migrados (cobranzas, eventos, morosidad actions + runner); APIs `/api/portal/push/{register,unregister}`; `PushSubscribeCard` en `/notificaciones`; handlers `push`/`notificationclick` en `public/sw.js`; VAPID en `.env.local`. Verificado tsc/eslint/115 tests/build.
+- **M7 · Esquema DB aplicado**: sección 13 en `drizzle/rls.sql` (`document_types` con `alert_days int[]`, `UNIQUE (club_id, kind)`, RLS) + columnas M7 sobre `documents` (file_name, mime_type, file_size, uploaded_by, reviewed_at, rejection_reason, alerted_days) + índices. Aplicada con `npm run db:rls`.
+- **M7 · Permisos + R2**: `documentos.ver`/`documentos.gestionar`/`documentos.tipos` en `ROLE_PERMISSIONS` (presidente/secretaria con los 3; coordinador/entrenador/manager solo `documentos.ver`); `src/lib/storage/r2.ts` con URLs firmadas (15 min subida / 5 min descarga, borrado best-effort).
+- **M7 · Lógica**: `src/modules/documentos/` — `schemas.ts` (KINDS_DOCUMENTO, guardarTipoDocumentoSchema, revisarDocumentoSchema con motivo obligatorio al rechazar, subirDocumentoSchema con tamaño máx, documentoIdSchema), `queries.ts` (listarTiposDocumento, tiposHabilitados, listarDocumentos + listarDocumentosTx con URL de descarga, resumenDocumentos), `service.ts` (tipoDocumentoPorKindTx, insertarDocumentoTx), `actions.ts` (guardarTipoDocumento, revisarDocumento con push al dueño, subirDocumentoStaff, cancelarSubidaStaff), `runner.ts` (ejecutarAlertasDocumentosCore) + cron `/api/cron/documentos` a las 13:00 UTC con guard CRON_SECRET.
+- **M7 · Portal**: `misDocumentos` + `grupoFamiliar` en `src/modules/portal/queries.ts`, `iniciarSubidaDocumento`/`borrarDocumento` en `actions.ts` (validan grupo familiar, borran solo pendiente/rechazado, borran objeto R2 best-effort).
+- **M7 · UI**: bandeja `/documentos` (resumen + filtros por estado + tabla + `RevisarDocumentoButtons`), config `/documentos/tipos` (`TiposDocumentoForm` por tipo: label, requiere vencimiento, días de aviso, habilitado), tab `documentos` en `personas/[id]` (`DocumentosPersonaTab` con subida staff), portal `/portal/documentos` (secciones por estado + `SubirDocumentoForm` del socio con grupo familiar + `BorrarDocumentoButton`), entrada en `PORTAL_NAV`. Componentes: `EstadoDocumentoBadge`, `RevisarDocumentoButtons`, `SubirDocumentoForm` (reuso staff/portal con `showPersona`/`action`), `TiposDocumentoForm`, `DocumentosPersonaTab`, `BorrarDocumentoButton`.
 
 ### Active
-- **M6 · Subida de documentos**: falta — se conecta con M7 (tipos de documento, R2 con URLs firmadas). Probablemente esperar a M7 para hacerlo junto.
+- (none)
 
 ### Blocked
 - (none)
 
 ## Next Move
-1. **M7 · Documentos y vencimientos**: tipos de documento, estados pendiente/vigente/vencido/rechazado, R2 con URLs firmadas, alertas 30/15/3 días (incluye subida de documentos del socio pendiente de M6).
-2. **M8 · Dashboards por rol**.
-3. (none)
+1. **M8 · Dashboards por rol**.
+2. (none)
 
 ## Relevant Files
 - `src/lib/permissions/index.ts`: `rolesEnClub`, `STAFF_ROLES`, `requirePermission`/`checkPermission`, `ROLE_PERMISSIONS` con `notificaciones.ver` para tutor/jugador.
 - `src/app/(app)/[club]/layout.tsx`: shell staff vs `PortalShell` de socio + `MemberRedirect`.
 - `src/app/page.tsx` + `src/app/(app)/[club]/page.tsx`: post-login por rol → dashboard o portal.
-- `src/modules/portal/queries.ts`: `datosPortal`, `datosCarnet`, `ultimosMovimientosPortal`, `personasDelMiembroTx`.
-- `src/modules/portal/actions.ts`: `crearLinkPago` (Mercado Pago, reusa `crearPreferenciaPago`).
+- `src/modules/portal/queries.ts`: `datosPortal`, `datosCarnet`, `ultimosMovimientosPortal`, `personasDelMiembroTx`, `grupoFamiliar`, `misDocumentos`.
+- `src/modules/portal/actions.ts`: `crearLinkPago` (Mercado Pago, reusa `crearPreferenciaPago`), `iniciarSubidaDocumento`, `borrarDocumento`.
 - `src/app/api/portal/carnet-token/route.ts` + `src/modules/portal/components/QrCarnet.tsx`: QR rotativo (JWT HS256 + `qrcode`).
-- `src/modules/portal/components/PagoPortalButton.tsx` + páginas `src/app/(app)/[club]/portal/{page,carnet,pagos}/page.tsx`.
+- `src/modules/portal/components/{PagoPortalButton,BorrarDocumentoButton}.tsx` + páginas `src/app/(app)/[club]/portal/{page,carnet,pagos,documentos}/page.tsx`.
 - PWA: `src/app/manifest.ts`, `public/sw.js`, `public/icons/*.svg`, `src/app/icon.svg`, `src/app/PwaRegister.tsx`, `src/app/offline/page.tsx`, `next.config.ts`, `src/middleware.ts`.
 - `src/modules/cobranzas/mercadopago.ts`: `crearPreferenciaPago` (externalRef `${clubId}:${accountId}:${periodo}`).
 - `src/modules/notificaciones/`: bandeja que reusan los socios (`notificaciones.ver`) + `PushSubscribeCard`.
@@ -57,4 +63,10 @@
 - `src/db/tenant.ts`: `TenantCtx.onCommit` — callbacks post-commit best-effort.
 - `src/app/api/portal/push/{register,unregister}/route.ts`: suscripción push del socio (upsert/delete con `rolesEnClub`).
 - `src/modules/morosidad/runner.ts` + `src/app/api/cron/cobranza/route.ts`: runner sin sesión + cron diario (M5).
-- `drizzle/rls.sql`: secciones 10–12 aplicadas.
+- `src/modules/documentos/`: `schemas.ts`, `queries.ts` (listarTiposDocumento, tiposHabilitados, listarDocumentos + Tx, resumenDocumentos), `service.ts`, `actions.ts` (guardarTipoDocumento, revisarDocumento, subirDocumentoStaff, cancelarSubidaStaff), `runner.ts`, `components/{EstadoDocumentoBadge,RevisarDocumentoButtons,SubirDocumentoForm,TiposDocumentoForm,DocumentosPersonaTab}.tsx`.
+- `src/app/(app)/[club]/documentos/{page,tipos/page}.tsx`: bandeja staff + config de tipos. `src/app/(app)/[club]/personas/[id]/page.tsx`: tab `documentos` con `DocumentosPersonaTab`.
+- `src/app/(app)/[club]/portal/documentos/page.tsx`: secciones por estado + subida del socio (`SubirDocumentoForm` + `BorrarDocumentoButton`).
+- `src/lib/storage/r2.ts`: client R2 + URLs firmadas (`firmarUrlSubida` 15 min / `firmarUrlDescarga` 5 min / `borrarObjeto`).
+- `src/app/api/cron/documentos/route.ts` + `vercel.json`: cron 13:00 UTC de alertas de vencimiento.
+- `src/db/seed-documentos.ts` + script `db:seed:m7`: seed idempotente de tipos de documento.
+- `drizzle/rls.sql`: secciones 10–13 aplicadas.
