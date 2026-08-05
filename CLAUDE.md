@@ -1,8 +1,8 @@
 ## Objective
-- **M6 · Portal del socio y del padre (brief)** casi completo: PWA (hecha), login unificado con desvío por rol (hecho), home con evento + estado de cuenta + pago MP (hecho), carnet con QR rotativo (hecho), notificaciones push (hechas: suscripción por socio + envío post-commit). Falta solo subida de documentos (se conecta con M7 — R2 + URLs firmadas). Portal pusheado en `331ecfc`; push en `0f405ea`. M5 cerró en `6a16c2d`.
+- **M6 · Portal del socio y del padre (brief)** casi completo: PWA (hecha), login unificado con desvío por rol (hecho), home con evento + estado de cuenta + pago MP (hecho), carnet con QR rotativo (hecho), notificaciones push (hechas: suscripción por socio + envío post-commit). Falta solo subida de documentos (se conecta con M7 — R2 + URLs firmadas). Portal pusheado en `331ecfc`; push en `6faae95`. M5 cerró en `6a16c2d`.
 
 ## Important Details
-- **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `0f405ea` (M6 push). Previos: `331ecfc` (M6 portal), `6a16c2d` (M5), `bb72c04`, `d55fc8a`, `6292e2b`, `31291fa`, `7b938ca`.
+- **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `6faae95` (M6 push). Previos: `331ecfc` (M6 portal), `6a16c2d` (M5), `bb72c04`, `d55fc8a`, `6292e2b`, `31291fa`, `7b938ca`.
 - **Base Neon única**: producción y dev comparten la misma base. Secciones 10–12 de RLS (`notifications`, `message_templates`, `cobranza_rules`, `contact_log`, `payment_plans`, `debito_lotes`, `push_subscriptions`) aplicadas. Seed M5 aplicado a los-cedros y demo-fc.
 - **Credenciales seed**: password `Cambiar123!`; emails `<rol>@<slug>.test`; slugs `los-cedros`, `demo-fc`. En los-cedros solo `tutor1@los-cedros.test` tiene login de familia (cuenta "Familia O'Connell", saldo 0).
 - **Regla de dinero**: cents vía `src/lib/money.ts` (`decimalToCents`/`centsToDecimal`/`formatARS`); base `numeric(14,2)`.
@@ -29,7 +29,7 @@
 - **M6 · Páginas**: `/portal` (saludo, próximo evento formateado con timezone del club, tarjetas de cuenta con cargos abiertos y `PagoPortalButton`), `/portal/carnet` (tarjeta con foto/iniciales, nº socio, DNI, categorías, membresías, `QrCarnet`), `/portal/pagos` (cargos pendientes + botón MP + últimos movimientos debit/credito). Nav del portal en el shell.
 - **Verificación**: `npx tsc --noEmit`, `npx eslint`, `npm test` (115), `npm run build` — todos OK con las rutas del portal, push y PWA.
 - **Probe**: validado contra base real que `tutor1@los-cedros.test` (rol `tutor`, 1 hijo `tutor_de`) ve su cuenta "Familia O'Connell" con 2 movimientos. Borrado.
-- **M6 · Push notificaciones** (en `0f405ea`): `push_subscriptions` en rls.sql sección 12 (aplicada); `TenantCtx.onCommit` + ejecución post-commit en `tenant.ts`; `src/lib/notifications/push.ts` (`enviarPush`) y `emit.ts` (`emitirNotificaciones({ tx, onCommit }, ...)`) — call sites migrados (cobranzas, eventos, morosidad actions + runner); APIs `/api/portal/push/{register,unregister}`; `PushSubscribeCard` en `/notificaciones`; handlers `push`/`notificationclick` en `public/sw.js`; VAPID en `.env.local`. Verificado tsc/eslint/115 tests/build.
+- **M6 · Push notificaciones** (en `6faae95`): `push_subscriptions` en rls.sql sección 12 (aplicada); `TenantCtx.onCommit` + ejecución post-commit en `tenant.ts`; `src/lib/notifications/push.ts` (`enviarPush`) y `emit.ts` (`emitirNotificaciones({ tx, onCommit }, ...)`) — call sites migrados (cobranzas, eventos, morosidad actions + runner); APIs `/api/portal/push/{register,unregister}`; `PushSubscribeCard` en `/notificaciones`; handlers `push`/`notificationclick` en `public/sw.js`; VAPID en `.env.local`. Verificado tsc/eslint/115 tests/build.
 
 ### Active
 - **M6 · Subida de documentos**: falta — se conecta con M7 (tipos de documento, R2 con URLs firmadas). Probablemente esperar a M7 para hacerlo junto.
