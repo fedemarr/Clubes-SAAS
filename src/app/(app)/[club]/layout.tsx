@@ -44,9 +44,10 @@ export default async function ClubLayout({
   }
 
   const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)
-  const nav: NavItem[] = puedeCobranzas
-    ? [...NAV, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: 'cobranzas' }]
-    : NAV
+  const puedeMorosidad = await checkPermission('morosidad.ver', { kind: 'club' }, slug)
+  let nav: NavItem[] = NAV
+  if (puedeCobranzas) nav = [...nav, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: 'cobranzas' }]
+  if (puedeMorosidad) nav = [...nav, { href: '/cuotas/morosidad', label: 'Morosidad', icon: 'morosidad' }]
 
   const primary = club.branding?.primary ?? '#111827'
   const brandStyle = brandTokens(primary)

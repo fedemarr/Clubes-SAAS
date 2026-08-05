@@ -87,6 +87,9 @@ export default async function CobranzasPage({
                 Débito
               </Button>
             )}
+            <Button render={<Link href={`/${slug}/cuotas/morosidad`} />} variant="outline">
+              Morosidad
+            </Button>
           </>
         }
       />

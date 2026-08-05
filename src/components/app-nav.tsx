@@ -6,6 +6,7 @@ import {
   CalendarDays,
   HandCoins,
   LayoutDashboard,
+  AlertTriangle,
   Trophy,
   Users,
   Wallet,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type NavIcon = 'dashboard' | 'personas' | 'categorias' | 'calendario' | 'cuotas' | 'cobranzas'
+export type NavIcon = 'dashboard' | 'personas' | 'categorias' | 'calendario' | 'cuotas' | 'cobranzas' | 'morosidad'
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -22,6 +23,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   calendario: CalendarDays,
   cuotas: Wallet,
   cobranzas: HandCoins,
+  morosidad: AlertTriangle,
 }
 
 export type NavItem = {

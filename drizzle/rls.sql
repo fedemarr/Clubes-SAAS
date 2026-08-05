@@ -236,3 +236,97 @@ CREATE POLICY tenant_isolation ON notifications
   WITH CHECK (club_id = current_club());
 CREATE INDEX IF NOT EXISTS notifications_club_created_idx ON notifications (club_id, created_at);
 CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications (user_id, created_at);
+
+-- 11. Morosidad y comunicaciones (M5). Vive acá y no en schema.ts por la
+--    misma razón que notifications y debito_lotes: son el andamiaje del
+--    proceso de cobranza, no entidades de negocio que la app edite directo.
+--    message_templates = plantillas con variables editables por el club.
+--    cobranza_rules = disparadores configurables sin tocar código.
+--    contact_log = registro de todo contacto enviado (para no duplicar y
+--    para poder demostrarlo); resolved_at cierra las sugerencias de
+--    suspensión, que NUNCA son automáticas.
+--    payment_plans = plan de pago que divide la deuda en N cuotas.
+
+CREATE TABLE IF NOT EXISTS message_templates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  key varchar(60) NOT NULL,
+  name varchar(120) NOT NULL,
+  body text NOT NULL,
+  updated_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON message_templates TO app_user;
+ALTER TABLE message_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE message_templates FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON message_templates;
+CREATE POLICY tenant_isolation ON message_templates
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE UNIQUE INDEX IF NOT EXISTS message_templates_club_key_uq ON message_templates (club_id, key);
+
+CREATE TABLE IF NOT EXISTS cobranza_rules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  name varchar(120) NOT NULL,
+  dias_desde_vencimiento integer NOT NULL CHECK (dias_desde_vencimiento >= 0),
+  channel varchar(20) NOT NULL CHECK (channel IN ('whatsapp', 'mail', 'coordinador', 'suspension')),
+  template_key varchar(60),
+  dedupe_dias integer NOT NULL DEFAULT 7 CHECK (dedupe_dias >= 1),
+  enabled boolean NOT NULL DEFAULT true,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON cobranza_rules TO app_user;
+ALTER TABLE cobranza_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cobranza_rules FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON cobranza_rules;
+CREATE POLICY tenant_isolation ON cobranza_rules
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE INDEX IF NOT EXISTS cobranza_rules_club_idx ON cobranza_rules (club_id, enabled);
+
+CREATE TABLE IF NOT EXISTS contact_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  rule_id uuid REFERENCES cobranza_rules(id),
+  user_id uuid REFERENCES users(id),
+  channel varchar(20) NOT NULL,
+  kind varchar(20) NOT NULL CHECK (kind IN ('mensaje', 'aviso', 'sugerencia')),
+  body text,
+  resolved_at timestamptz,
+  delivered_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON contact_log TO app_user;
+ALTER TABLE contact_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contact_log FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON contact_log;
+CREATE POLICY tenant_isolation ON contact_log
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE INDEX IF NOT EXISTS contact_log_account_delivered_idx ON contact_log (club_id, account_id, delivered_at);
+CREATE INDEX IF NOT EXISTS contact_log_rule_idx ON contact_log (club_id, rule_id);
+
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  total numeric(14, 2) NOT NULL,
+  cantidad_cuotas integer NOT NULL CHECK (cantidad_cuotas >= 1),
+  monto_cuota numeric(14, 2) NOT NULL,
+  primera_fecha date NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'activo' CHECK (status IN ('activo', 'completado', 'cancelado')),
+  motivo varchar(200),
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON payment_plans TO app_user;
+ALTER TABLE payment_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_plans FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON payment_plans;
+CREATE POLICY tenant_isolation ON payment_plans
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE INDEX IF NOT EXISTS payment_plans_account_idx ON payment_plans (club_id, account_id, status);
