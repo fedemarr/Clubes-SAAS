@@ -9,7 +9,7 @@ import {
   guardarReglaCobranza,
   resolverSugerencia,
 } from '../actions'
-import type { ResultadoEjecucionCobranza } from '../actions'
+import type { ResultadoEjecucionCobranza } from '../runner'
 import type { ReglaCobranza } from '../service'
 import type { CanalCobranza } from '../schemas'
 import { formatARS } from '@/lib/money'

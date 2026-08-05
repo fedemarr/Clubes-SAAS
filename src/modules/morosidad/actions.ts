@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm'
 import { withTenant } from '@/db/tenant'
 import { requirePermission } from '@/lib/permissions'
 import { centsToDecimal, formatARS } from '@/lib/money'
-import { emitirNotificaciones, type NotificacionInput } from '@/lib/notifications/emit'
+import { emitirNotificaciones } from '@/lib/notifications/emit'
 import {
   crearPlanDePagoSchema,
   eliminarReglaSchema,
@@ -12,14 +12,9 @@ import {
   guardarReglaCobranzaSchema,
   resolverSugerenciaSchema,
 } from './schemas'
-import { evaluarReglasCobranza, planDePago, type ReglaCobranza } from './service'
-import {
-  coordinadoresPorDeporte,
-  deudoresMorosidad,
-  listarContactosRecientes,
-  listarReglasCobranza,
-  plantillasPorKey,
-} from './queries'
+import { planDePago, type ReglaCobranza } from './service'
+import { ejecutarCobranzaCore } from './runner'
+import type { ResultadoEjecucionCobranza } from './runner'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -136,129 +131,15 @@ export async function guardarPlantilla(clubSlug: string, input: unknown): Promis
 // M5.1 · Runner manual del motor de reglas
 // ---------------------------------------------------------------------------
 
-export type ResultadoEjecucionCobranza = {
-  mensajes: number
-  avisosCoordinador: number
-  sugerencias: number
-  omitidos: number
-  porMotivo: Record<string, number>
-}
-
 /**
- * Corre el motor de reglas ahora mismo (también lo hará el cron): decide a
- * quién contactar, registra todo en contact_log (para no duplicar y para
- * poder demostrarlo) y emite las notificaciones por el canal transversal.
- * La suspensión solo se sugiere; un humano la resuelve.
+ * Corre el motor de reglas ahora mismo (también lo hace el cron). Requiere
+ * morosidad.ver; la lógica compartida vive en ejecutarCobranzaCore() (runner).
  */
 export async function ejecutarCobranza(clubSlug: string): Promise<ActionResult<ResultadoEjecucionCobranza>> {
   try {
     const ctx = await requirePermission('morosidad.ver', { kind: 'club' }, clubSlug)
-
-    const [deudores, reglas, plantillas, coordinadores] = await Promise.all([
-      deudoresMorosidad(ctx.clubId),
-      listarReglasCobranza(ctx.clubId),
-      plantillasPorKey(ctx.clubId),
-      coordinadoresPorDeporte(ctx.clubId),
-    ])
-    const activas = reglas.filter((r) => r.enabled)
-    if (activas.length === 0) return { ok: true, data: { mensajes: 0, avisosCoordinador: 0, sugerencias: 0, omitidos: deudores.length, porMotivo: { 'sin reglas activas': deudores.length } } }
-
-    const maxDedupe = Math.max(1, ...activas.map((r) => r.dedupeDias))
-    const desde = new Date(Date.now() - maxDedupe * 86400000)
-    const recientes = await listarContactosRecientes(
-      ctx.clubId,
-      deudores.map((d) => d.accountId),
-      desde,
-    )
-
-    const deudorACobranza = deudores.map((d) => ({
-      accountId: d.accountId,
-      deudaCents: d.deudaCents,
-      diasDesdeVencimiento: d.diasDesdeVencimiento,
-      destino: d.destino
-        ? { userId: d.destino.userId, nombre: d.destino.nombre, apellido: d.destino.apellido }
-        : null,
-    }))
-    const holderPorCuenta = new Map(deudores.map((d) => [d.accountId, d] as const))
-
-    const { disparos, omitidos } = evaluarReglasCobranza({
-      deudores: deudorACobranza,
-      reglas: activas,
-      plantillas,
-      contactosRecientes: recientes,
-      varsDeudor: (d) => {
-        const h = holderPorCuenta.get(d.accountId)
-        return {
-          nombre: h?.destino?.nombre ?? h?.holderNombre ?? '',
-          apellido: h?.destino?.apellido ?? h?.holderApellido ?? '',
-          monto: formatARS(d.deudaCents),
-        }
-      },
-    })
-
-    const resultado = await withTenant(
-      ctx.clubId,
-      async ({ tx, audit }) => {
-        const notif: NotificacionInput[] = []
-        let mensajes = 0
-        let avisosCoordinador = 0
-        let sugerencias = 0
-
-        for (const s of disparos) {
-          let userId: string | null = null
-          if (s.kind === 'mensaje') {
-            userId = s.destinoUserId
-            mensajes += 1
-            if (s.destinoUserId) {
-              notif.push({
-                userId: s.destinoUserId,
-                type: 'cobranza.recordatorio',
-                title: s.name,
-                body: s.body ?? '',
-                data: { accountId: s.accountId, ruleId: s.ruleId },
-              })
-            }
-          } else if (s.channel === 'coordinador') {
-            const d = holderPorCuenta.get(s.accountId)
-            const coord = coordinadores.find((c) => d?.deportes.includes(c.sport))
-            userId = coord?.userId ?? null
-            avisosCoordinador += 1
-            if (coord?.userId) {
-              const h = holderPorCuenta.get(s.accountId)
-              notif.push({
-                userId: coord.userId,
-                type: 'cobranza.aviso_coordinador',
-                title: s.name,
-                body: `Deuda sin resolver: ${h?.holderApellido ?? ''}, ${h?.holderNombre ?? ''} (${h?.deudaCents ? formatARS(h.deudaCents) : ''}).`,
-                data: { accountId: s.accountId, ruleId: s.ruleId },
-              })
-            }
-          } else {
-            sugerencias += 1
-          }
-
-          await tx.execute(sql`
-            INSERT INTO contact_log (club_id, account_id, rule_id, user_id, channel, kind, body)
-            VALUES (${ctx.clubId}, ${s.accountId}, ${s.ruleId}, ${userId}, ${s.channel}, ${s.kind}, ${s.body ?? null})
-          `)
-          await audit('contact_log', s.accountId, 'custom', {
-            action: 'cobranza.disparo',
-            ruleId: s.ruleId,
-            channel: s.channel,
-            kind: s.kind,
-          })
-        }
-
-        if (notif.length > 0) await emitirNotificaciones(tx, ctx.clubId, notif)
-        return { mensajes, avisosCoordinador, sugerencias }
-      },
-      { userId: ctx.userId },
-    )
-
-    const porMotivo: Record<string, number> = {}
-    for (const o of omitidos) porMotivo[o.motivo] = (porMotivo[o.motivo] ?? 0) + 1
-
-    return { ok: true, data: { ...resultado, omitidos: omitidos.length, porMotivo } }
+    const data = await ejecutarCobranzaCore(ctx.clubId)
+    return { ok: true, data }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
   }

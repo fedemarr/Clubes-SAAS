@@ -19,6 +19,7 @@
     "db:rls:prod": "tsx --env-file=.env.production.local src/db/apply-rls.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
+    "db:seed:m5": "tsx --env-file=.env.local src/db/seed-morosidad.ts",
     "test": "vitest run"
   },
   "dependencies": {
