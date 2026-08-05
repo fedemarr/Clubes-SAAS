@@ -2,13 +2,32 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { ComponentType } from 'react'
+import {
+  CalendarDays,
+  HandCoins,
+  LayoutDashboard,
+  Trophy,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+export type NavIcon = 'dashboard' | 'personas' | 'categorias' | 'calendario' | 'cuotas' | 'cobranzas'
+
+const ICONS: Record<NavIcon, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  personas: Users,
+  categorias: Trophy,
+  calendario: CalendarDays,
+  cuotas: Wallet,
+  cobranzas: HandCoins,
+}
 
 export type NavItem = {
   href: string
   label: string
-  icon: ComponentType<{ className?: string }>
+  icon: NavIcon
 }
 
 function isActive(pathname: string, items: NavItem[], item: NavItem): boolean {
@@ -40,6 +59,7 @@ export function AppNav({
     >
       {items.map((item) => {
         const active = isActive(pathname, items, item)
+        const Icon = ICONS[item.icon]
         return (
           <Link
             key={item.href}
@@ -52,7 +72,7 @@ export function AppNav({
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )}
           >
-            <item.icon className="size-4 shrink-0" />
+            <Icon className="size-4 shrink-0" />
             <span>{item.label}</span>
           </Link>
         )

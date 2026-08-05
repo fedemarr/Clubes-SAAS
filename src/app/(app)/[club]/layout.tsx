@@ -1,14 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import {
-  CalendarDays,
-  HandCoins,
-  LayoutDashboard,
-  Trophy,
-  Users,
-  Wallet,
-} from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
@@ -19,11 +11,11 @@ import { AppNav, type NavItem } from '@/components/app-nav'
 import { SignOutButton } from '@/components/sign-out-button'
 
 const NAV: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/personas', label: 'Personas', icon: Users },
-  { href: '/categorias', label: 'Categorías', icon: Trophy },
-  { href: '/calendario', label: 'Calendario', icon: CalendarDays },
-  { href: '/cuotas', label: 'Cuotas', icon: Wallet },
+  { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { href: '/personas', label: 'Personas', icon: 'personas' },
+  { href: '/categorias', label: 'Categorías', icon: 'categorias' },
+  { href: '/calendario', label: 'Calendario', icon: 'calendario' },
+  { href: '/cuotas', label: 'Cuotas', icon: 'cuotas' },
 ]
 
 export default async function ClubLayout({
@@ -53,7 +45,7 @@ export default async function ClubLayout({
 
   const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)
   const nav: NavItem[] = puedeCobranzas
-    ? [...NAV, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: HandCoins }]
+    ? [...NAV, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: 'cobranzas' }]
     : NAV
 
   const primary = club.branding?.primary ?? '#111827'
