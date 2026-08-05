@@ -223,3 +223,68 @@ export async function acreditarPagoPendiente(
 
   return { pagoId: pago.id, imputaciones, sobranteCents, holderUserId: holder.userId }
 }
+
+/**
+ * Reversión de un pago acreditado: asiento inverso por cada crédito (nunca se
+ * borra el original), el pago pasa a reversado y los cargos se reabren según
+ * el saldo que les queda. Compartido entre la action de reversión manual y el
+ * importador de rechazos del débito automático (M4.4).
+ */
+export async function revertirPagoEnLedger(
+  tx: Tx,
+  clubId: string,
+  pagoId: string,
+  motivo: string,
+): Promise<{ reversado: boolean }> {
+  const [pago] = await tx
+    .select()
+    .from(payments)
+    .where(and(eq(payments.clubId, clubId), eq(payments.id, pagoId)))
+    .limit(1)
+  if (!pago) throw new Error('No existe ese pago.')
+  if (pago.status === 'reversado') return { reversado: false }
+  if (pago.status !== 'acreditado') throw new Error('Solo se pueden revertir pagos acreditados.')
+
+  const creditos = await tx
+    .select()
+    .from(ledgerEntries)
+    .where(
+      and(
+        eq(ledgerEntries.clubId, clubId),
+        eq(ledgerEntries.paymentId, pago.id),
+        eq(ledgerEntries.direction, 'credito'),
+        isNull(ledgerEntries.reversesEntryId),
+      ),
+    )
+
+  for (const c of creditos) {
+    await tx.insert(ledgerEntries).values({
+      clubId,
+      accountId: pago.accountId!,
+      direction: 'debito',
+      amount: c.amount,
+      chargeId: c.chargeId,
+      paymentId: pago.id,
+      reversesEntryId: c.id,
+      memo: `Reversión: ${motivo}`,
+    })
+  }
+
+  await tx.update(payments).set({ status: 'reversado' }).where(eq(payments.id, pago.id))
+
+  const cargoIds = [...new Set(creditos.map((c) => c.chargeId).filter((id): id is string => Boolean(id)))]
+  for (const id of cargoIds) {
+    const [cargo] = await tx.select().from(charges).where(eq(charges.id, id)).limit(1)
+    if (!cargo || cargo.status === 'anulado') continue
+    const restante = await creditosPorCargo(tx, clubId, [id])
+    const pagado = restante.get(id) ?? 0
+    const estado = estadoCargoDespuesDePago(decimalToCents(cargo.amount), pagado)
+    if (estado === 'pendiente' && cargo.status !== 'vencido') {
+      await tx.update(charges).set({ status: 'pendiente' }).where(eq(charges.id, id))
+    } else if (estado === 'parcial') {
+      await tx.update(charges).set({ status: 'parcial' }).where(eq(charges.id, id))
+    }
+  }
+
+  return { reversado: true }
+}

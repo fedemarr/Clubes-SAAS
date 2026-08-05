@@ -1,18 +1,33 @@
 'use server'
 
 import { createHash } from 'crypto'
-import { and, eq, isNull } from 'drizzle-orm'
-import { accounts, charges, ledgerEntries, payments, persons } from '@/db/schema'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { accounts, payments, persons } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { requirePermission } from '@/lib/permissions'
 import { centsToDecimal, decimalToCents, formatARS } from '@/lib/money'
-import { emitirNotificaciones } from '@/lib/notifications/emit'
-import { registrarPagoSchema, revertirPagoSchema, generarLinkPagoSchema, importarExtractoSchema } from './schemas'
-import { estadoCargoDespuesDePago, parsearExtractoCSV, proponerMatcheos } from './service'
-import type { MovimientoExtracto, PropuestaMatch } from './service'
-import { acreditarPagoEnLedger, acreditarPagoPendiente } from './acreditacion'
+import { emitirNotificaciones, type NotificacionInput } from '@/lib/notifications/emit'
+import {
+  acreditarLoteDebitoSchema,
+  generarLoteDebitoSchema,
+  generarLinkPagoSchema,
+  importarExtractoSchema,
+  importarRechazosDebitoSchema,
+  registrarCbuDebitoSchema,
+  registrarPagoSchema,
+  revertirPagoSchema,
+} from './schemas'
+import {
+  generarNumeroLote,
+  parsearExtractoCSV,
+  parsearRechazosCSV,
+  proponerMatcheos,
+  serializarLoteCSV,
+} from './service'
+import type { MovimientoExtracto, PropuestaMatch, RegistroLoteDebito } from './service'
+import { acreditarPagoEnLedger, acreditarPagoPendiente, revertirPagoEnLedger } from './acreditacion'
 import { crearPreferenciaPago } from './mercadopago'
-import { buscarCuentaParaCobrar, creditosPorCargo, deudaDeCuenta } from './queries'
+import { buscarCuentaParaCobrar, cuentasDebitables, deudaDeCuenta, listarLotesDebito, pagosDelLote } from './queries'
 import type { ResultadoLinkPago } from './mercadopago'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -143,47 +158,7 @@ export async function revertirPago(clubSlug: string, input: unknown): Promise<Ac
     const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
 
     await withTenant(ctx.clubId, async ({ tx }) => {
-      const [pago] = await tx
-        .select()
-        .from(payments)
-        .where(and(eq(payments.clubId, ctx.clubId), eq(payments.id, parsed.data.pagoId)))
-        .limit(1)
-      if (!pago) throw new Error('No existe ese pago.')
-      if (pago.status !== 'acreditado') throw new Error('Solo se pueden revertir pagos acreditados.')
-
-      const creditos = await tx
-        .select()
-        .from(ledgerEntries)
-        .where(and(eq(ledgerEntries.clubId, ctx.clubId), eq(ledgerEntries.paymentId, pago.id), eq(ledgerEntries.direction, 'credito'), isNull(ledgerEntries.reversesEntryId)))
-
-      for (const c of creditos) {
-        await tx.insert(ledgerEntries).values({
-          clubId: ctx.clubId,
-          accountId: pago.accountId!,
-          direction: 'debito',
-          amount: c.amount,
-          chargeId: c.chargeId,
-          paymentId: pago.id,
-          reversesEntryId: c.id,
-          memo: `Reversión: ${parsed.data.motivo}`,
-        })
-      }
-
-      await tx.update(payments).set({ status: 'reversado' }).where(eq(payments.id, pago.id))
-
-      const cargoIds = [...new Set(creditos.map((c) => c.chargeId).filter((id): id is string => Boolean(id)))]
-      for (const id of cargoIds) {
-        const [cargo] = await tx.select().from(charges).where(eq(charges.id, id)).limit(1)
-        if (!cargo || cargo.status === 'anulado') continue
-        const restante = await creditosPorCargo(tx, ctx.clubId, [id])
-        const pagado = restante.get(id) ?? 0
-        const estado = estadoCargoDespuesDePago(decimalToCents(cargo.amount), pagado)
-        if (estado === 'pendiente' && cargo.status !== 'vencido') {
-          await tx.update(charges).set({ status: 'pendiente' }).where(eq(charges.id, id))
-        } else if (estado === 'parcial') {
-          await tx.update(charges).set({ status: 'parcial' }).where(eq(charges.id, id))
-        }
-      }
+      await revertirPagoEnLedger(tx, ctx.clubId, parsed.data.pagoId, parsed.data.motivo)
     }, { userId: ctx.userId })
 
     return { ok: true, data: null }
@@ -346,6 +321,311 @@ export async function confirmarConciliacion(clubSlug: string, input: unknown): P
     }, { userId: ctx.userId })
 
     return { ok: true, data: { pagoId: resultado.pagoId } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M4.4 · Débito automático
+// ---------------------------------------------------------------------------
+
+/**
+ * Guarda (o quita) el CBU para débito en el titular de la cuenta. Vive en
+ * persons.custom.debitoCbu (schema fijo de app, ver DECISIONS.md — M4.4).
+ */
+export async function registrarCbuDebito(
+  clubSlug: string,
+  input: unknown,
+): Promise<ActionResult<{ accountId: string; cbu: string | null }>> {
+  const parsed = registrarCbuDebitoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
+    const cbu = parsed.data.cbu === '' ? null : parsed.data.cbu
+
+    const guardado = await withTenant(
+      ctx.clubId,
+      async ({ tx }) => {
+        const [cuenta] = await tx
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.clubId, ctx.clubId), eq(accounts.id, parsed.data.accountId), isNull(accounts.deletedAt)))
+          .limit(1)
+        if (!cuenta) throw new Error('No existe esa cuenta.')
+        const [holder] = await tx.select().from(persons).where(eq(persons.id, cuenta.holderPersonId)).limit(1)
+        if (!holder) throw new Error('La cuenta no tiene titular.')
+
+        await tx
+          .update(persons)
+          .set({ custom: { ...(holder.custom ?? {}), debitoCbu: cbu } })
+          .where(eq(persons.id, holder.id))
+        return { accountId: cuenta.id, cbu }
+      },
+      { userId: ctx.userId },
+    )
+    return { ok: true, data: guardado }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+export type ResultadoLoteDebito = {
+  loteId: string
+  numero: string
+  fechaEjecucion: string
+  registros: number
+  totalCents: number
+  archivo: string
+  filename: string
+}
+
+/**
+ * Genera el lote de débito: toma todas las cuentas con CBU y saldo deudor,
+ * crea un payment 'pendiente' por cuenta (externalRef debito:<numero>:<id>) y
+ * devuelve el CSV con formato genérico para subir al banco. No acredita nada.
+ */
+export async function generarLoteDebito(clubSlug: string, input: unknown): Promise<ActionResult<ResultadoLoteDebito>> {
+  const parsed = generarLoteDebitoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
+
+    const candidatas = await cuentasDebitables(ctx.clubId)
+    if (candidatas.length === 0) {
+      return { ok: false, error: 'No hay cuentas con CBU cargado y saldo deudor para debitar.' }
+    }
+
+    const [ultimo] = (await listarLotesDebito(ctx.clubId)).map((l) => l.numero)
+    const numero = generarNumeroLote(new Date().getFullYear(), ultimo ?? null)
+    const totalCents = candidatas.reduce((acc, c) => acc + c.deudaCents, 0)
+    const periodo = parsed.data.fechaEjecucion.slice(0, 7)
+
+    const registros: RegistroLoteDebito[] = candidatas.map((c) => ({
+      cbu: c.cbu,
+      titular: `${c.holderApellido}, ${c.holderNombre}`,
+      montoCents: c.deudaCents,
+      periodo,
+      referencia: `debito:${numero}:${c.accountId}`,
+    }))
+
+    const loteId = await withTenant(
+      ctx.clubId,
+      async ({ tx, audit }) => {
+        for (const c of candidatas) {
+          await tx.insert(payments).values({
+            clubId: ctx.clubId,
+            accountId: c.accountId,
+            method: 'debito_automatico',
+            amount: centsToDecimal(c.deudaCents),
+            paidAt: new Date(`${parsed.data.fechaEjecucion}T12:00:00Z`),
+            status: 'pendiente',
+            externalRef: `debito:${numero}:${c.accountId}`,
+            rawPayload: { lote: numero, cbu: c.cbu, titular: `${c.holderApellido}, ${c.holderNombre}` },
+            recordedBy: ctx.userId,
+          })
+        }
+
+        const { rows: loteRows } = await tx.execute<{ id: string }>(sql`
+          INSERT INTO debito_lotes (club_id, numero, banco, fecha_ejecucion, status, monto_total, registros, generado_por)
+          VALUES (${ctx.clubId}, ${numero}, ${parsed.data.banco}, ${parsed.data.fechaEjecucion}, 'generado', ${centsToDecimal(totalCents)}, ${candidatas.length}, ${ctx.userId})
+          RETURNING id
+        `)
+        const lote = loteRows[0]
+        if (!lote) throw new Error('No se pudo crear el lote.')
+
+        await audit('debito_lotes', lote.id, 'create', {
+          numero,
+          banco: parsed.data.banco,
+          fechaEjecucion: parsed.data.fechaEjecucion,
+          registros: candidatas.length,
+          montoCents: totalCents,
+        })
+        return lote.id
+      },
+      { userId: ctx.userId },
+    )
+
+    return {
+      ok: true,
+      data: {
+        loteId,
+        numero,
+        fechaEjecucion: parsed.data.fechaEjecucion,
+        registros: candidatas.length,
+        totalCents,
+        archivo: serializarLoteCSV(registros),
+        filename: `lote-debito-${numero}-${parsed.data.fechaEjecucion}.csv`,
+      },
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+export type ResultadoAcreditacionLote = { loteId: string; acreditados: number; montoCents: number }
+
+/**
+ * Acredita el lote como cobrado por el banco: pasa cada payment pendiente del
+ * lote a 'acreditado' e imputa los créditos en el ledger (FIFO). Llamar solo
+ * cuando el banco confirma el débito (hoy manual, luego webhook del banco).
+ */
+export async function acreditarLoteDebito(clubSlug: string, input: unknown): Promise<ActionResult<ResultadoAcreditacionLote>> {
+  const parsed = acreditarLoteDebitoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
+
+    const resultado = await withTenant(
+      ctx.clubId,
+      async ({ tx, audit }) => {
+        const { rows: loteRows } = await tx.execute<{ id: string; numero: string; registros: number; acreditados: number; rechazados: number }>(
+          sql`SELECT id, numero, registros, acreditados, rechazados FROM debito_lotes WHERE id = ${parsed.data.loteId} AND club_id = ${ctx.clubId}`,
+        )
+        const lote = loteRows[0]
+        if (!lote) throw new Error('No existe ese lote.')
+
+        const pagos = await pagosDelLote(tx, ctx.clubId, lote.numero)
+        const pendientes = pagos.filter((p) => p.status === 'pendiente' && p.accountId)
+
+        let acreditados = 0
+        let montoCents = 0
+        const notif: NotificacionInput[] = []
+
+        for (const p of pendientes) {
+          const r = await acreditarPagoPendiente(tx, ctx.clubId, p.id, p.accountId!)
+          acreditados += 1
+          montoCents += decimalToCents(p.amount)
+          if (r.holderUserId) {
+            notif.push({
+              userId: r.holderUserId,
+              type: 'pago.acreditado',
+              title: 'Débito acreditado',
+              body: `Acreditamos tu cuota por débito automático (${formatARS(decimalToCents(p.amount))}).`,
+              data: { pagoId: p.id, accountId: p.accountId },
+            })
+          }
+        }
+
+        const totalAcreditados = lote.acreditados + acreditados
+        const nuevoStatus = totalAcreditados >= lote.registros ? 'acreditado' : 'generado'
+        await tx.execute(sql`UPDATE debito_lotes SET acreditados = ${totalAcreditados}, status = ${nuevoStatus} WHERE id = ${lote.id}`)
+        await audit('debito_lotes', lote.id, 'update', { acreditados: totalAcreditados, status: nuevoStatus })
+
+        if (notif.length > 0) await emitirNotificaciones(tx, ctx.clubId, notif)
+        return { loteId: lote.id, acreditados, montoCents }
+      },
+      { userId: ctx.userId },
+    )
+    return { ok: true, data: resultado }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+export type ResultadoRechazosDebito = {
+  loteId: string
+  procesados: number
+  rechazados: number
+  reversados: number
+  sinMatch: { cbu: string | null; montoCents: number; motivo: string }[]
+}
+
+/**
+ * Importa el archivo de rechazos del banco: marca 'rechazado' los payments
+ * pendientes que coinciden (por referencia o por CBU+monto) y revierte los que
+ * ya estaban acreditados con asiento inverso (nunca borra el original).
+ */
+export async function importarRechazosDebito(
+  clubSlug: string,
+  input: unknown,
+): Promise<ActionResult<ResultadoRechazosDebito>> {
+  const parsed = importarRechazosDebitoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('cobranzas.registrar', { kind: 'club' }, clubSlug)
+
+    const rechazos = parsearRechazosCSV(parsed.data.texto, parsed.data.separador)
+    if (rechazos.length === 0) return { ok: false, error: 'No se detectaron rechazos en el archivo.' }
+
+    const resultado = await withTenant(
+      ctx.clubId,
+      async ({ tx, audit }) => {
+        const { rows: loteRows } = await tx.execute<{ id: string; numero: string; registros: number; rechazados: number }>(
+          sql`SELECT id, numero, registros, rechazados FROM debito_lotes WHERE id = ${parsed.data.loteId} AND club_id = ${ctx.clubId}`,
+        )
+        const lote = loteRows[0]
+        if (!lote) throw new Error('No existe ese lote.')
+
+        const pagos = await pagosDelLote(tx, ctx.clubId, lote.numero)
+        const porRef = new Map(pagos.map((p) => [p.externalRef ?? '', p]))
+
+        let rechazados = 0
+        let reversados = 0
+        const sinMatch: ResultadoRechazosDebito['sinMatch'] = []
+        const accountIds = new Set<string>()
+
+        for (const r of rechazos) {
+          let pago = r.referencia ? porRef.get(r.referencia) : undefined
+          if (!pago) {
+            pago = pagos.find(
+              (p) =>
+                (p.status === 'pendiente' || p.status === 'acreditado') &&
+                (p.rawPayload as { cbu?: string } | null)?.cbu === r.cbu &&
+                decimalToCents(p.amount) === r.montoCents,
+            )
+          }
+          if (!pago) {
+            sinMatch.push({ cbu: r.cbu, montoCents: r.montoCents, motivo: r.motivo })
+            continue
+          }
+
+          if (pago.status === 'pendiente') {
+            await tx.update(payments).set({ status: 'rechazado' }).where(eq(payments.id, pago.id))
+            rechazados += 1
+          } else if (pago.status === 'acreditado') {
+            await revertirPagoEnLedger(tx, ctx.clubId, pago.id, `Rechazo del banco: ${r.motivo || 'sin motivo'}`)
+            reversados += 1
+          } else {
+            continue
+          }
+          if (pago.accountId) accountIds.add(pago.accountId)
+        }
+
+        const notif: NotificacionInput[] = []
+        if (accountIds.size > 0) {
+          const holders = await tx
+            .select({ userId: persons.userId, accountId: accounts.id })
+            .from(accounts)
+            .innerJoin(persons, eq(persons.id, accounts.holderPersonId))
+            .where(and(inArray(accounts.id, [...accountIds]), eq(accounts.clubId, ctx.clubId)))
+          for (const h of holders) {
+            if (h.userId) {
+              notif.push({
+                userId: h.userId,
+                type: 'pago.rechazado',
+                title: 'Débito rechazado',
+                body: 'El banco no pudo debitar la cuota. Revisá el CBU o la cuenta de origen.',
+                data: { accountId: h.accountId },
+              })
+            }
+          }
+        }
+
+        const totalRechazos = lote.rechazados + rechazados + reversados
+        await tx.execute(sql`UPDATE debito_lotes SET rechazados = ${totalRechazos}, status = 'cerrado' WHERE id = ${lote.id}`)
+        await audit('debito_lotes', lote.id, 'update', { rechazados: totalRechazos, status: 'cerrado' })
+
+        if (notif.length > 0) await emitirNotificaciones(tx, ctx.clubId, notif)
+        return { loteId: lote.id, procesados: rechazados + reversados, rechazados, reversados, sinMatch }
+      },
+      { userId: ctx.userId },
+    )
+    return { ok: true, data: resultado }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
   }

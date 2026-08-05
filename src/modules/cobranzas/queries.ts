@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, inArray, isNull, like, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { withTenant } from '@/db/tenant'
 import { accounts, charges, ledgerEntries, payments, persons } from '@/db/schema'
@@ -182,4 +182,164 @@ export async function listarPagosPendientes(clubId: string): Promise<PagoPendien
       .where(and(eq(payments.clubId, clubId), eq(payments.status, 'pendiente'), isNull(payments.accountId)))
       .orderBy(desc(payments.paidAt))
   })
+}
+
+// ---------------------------------------------------------------------------
+// M4.4 · Débito automático
+// ---------------------------------------------------------------------------
+
+export type CuentaDebitable = {
+  accountId: string
+  label: string | null
+  holderNombre: string
+  holderApellido: string
+  cbu: string
+  deudaCents: number
+}
+
+/** Saldos (account_balances) de un conjunto de cuentas, en centavos. */
+async function saldosDeCuentas(tx: Tx, clubId: string, accountIds: string[]): Promise<Map<string, number>> {
+  if (accountIds.length === 0) return new Map()
+  const saldos = await tx.execute<{ account_id: string; balance: string }>(
+    sql`SELECT account_id, balance FROM account_balances WHERE account_id IN (${sql.join(accountIds, sql`, `)})`,
+  )
+  return new Map(saldos.rows.map((r) => [r.account_id, decimalToCents(r.balance)]))
+}
+
+type CuentaHolderRow = {
+  accountId: string
+  label: string | null
+  holderNombre: string
+  holderApellido: string
+  cbu: string | null
+}
+
+async function cuentasDeudoras(tx: Tx, clubId: string): Promise<CuentaHolderRow[]> {
+  const rows = await tx
+    .select({
+      accountId: accounts.id,
+      label: accounts.label,
+      holderNombre: persons.firstName,
+      holderApellido: persons.lastName,
+      cbu: sql<string | null>`${persons.custom}->>'debitoCbu'`,
+    })
+    .from(accounts)
+    .innerJoin(persons, eq(persons.id, accounts.holderPersonId))
+    .where(and(eq(accounts.clubId, clubId), isNull(accounts.deletedAt)))
+    .orderBy(asc(persons.lastName))
+
+  if (rows.length === 0) return []
+  const ids = rows.map((r) => r.accountId)
+  const balance = await saldosDeCuentas(tx, clubId, ids)
+  return rows.filter((r) => (balance.get(r.accountId) ?? 0) > 0)
+}
+
+/**
+ * Cuentas con CBU cargado para débito y saldo deudor, que no tengan ya un
+ * débito en cola (payment pendiente en un lote abierto). Son los candidatos
+ * del próximo lote. El CBU vive en persons.custom.debitoCbu del titular
+ * (schema fijo, ver DECISIONS.md — M4.4).
+ */
+export async function cuentasDebitables(clubId: string): Promise<CuentaDebitable[]> {
+  return withTenant(clubId, async ({ tx }) => {
+    const deudoras = await cuentasDeudoras(tx, clubId)
+    const conCbu = deudoras.filter((r): r is typeof r & { cbu: string } => Boolean(r.cbu))
+    if (conCbu.length === 0) return []
+
+    const enCola = await tx
+      .select({ accountId: payments.accountId })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.clubId, clubId),
+          eq(payments.method, 'debito_automatico'),
+          eq(payments.status, 'pendiente'),
+        ),
+      )
+    const enColaIds = new Set(enCola.map((p) => p.accountId).filter((id): id is string => Boolean(id)))
+
+    const balance = await saldosDeCuentas(tx, clubId, conCbu.map((c) => c.accountId))
+    return conCbu
+      .filter((c) => !enColaIds.has(c.accountId))
+      .map((c) => ({ ...c, cbu: c.cbu, deudaCents: balance.get(c.accountId) ?? 0 }))
+      .filter((c) => c.deudaCents > 0)
+  })
+}
+
+/**
+ * Cuentas deudoras cuyo titular todavía no tiene CBU cargado. Es la lista para
+ * completar datos de débito antes de generar el primer lote.
+ */
+export async function cuentasSinCbuParaDebito(clubId: string): Promise<CuentaDebitable[]> {
+  return withTenant(clubId, async ({ tx }) => {
+    const deudoras = await cuentasDeudoras(tx, clubId)
+    const balance = await saldosDeCuentas(
+      tx,
+      clubId,
+      deudoras.filter((r) => !r.cbu).map((r) => r.accountId),
+    )
+    return deudoras
+      .filter((r) => !r.cbu)
+      .map((r) => ({ ...r, cbu: '', deudaCents: balance.get(r.accountId) ?? 0 }))
+  })
+}
+
+export type LoteDebito = {
+  id: string
+  numero: string
+  banco: string
+  fechaEjecucion: string
+  status: string
+  montoTotal: string
+  registros: number
+  acreditados: number
+  rechazados: number
+  generadoPor: string | null
+  createdAt: Date
+}
+
+type LoteDebitoRow = {
+  id: string
+  numero: string
+  banco: string
+  fecha_ejecucion: string
+  status: string
+  monto_total: string
+  registros: number
+  acreditados: number
+  rechazados: number
+  generado_por: string | null
+  created_at: Date
+}
+
+export async function listarLotesDebitoEnTx(tx: Tx, clubId: string): Promise<LoteDebito[]> {
+  const rows = await tx.execute<LoteDebitoRow>(
+    sql`SELECT * FROM debito_lotes WHERE club_id = ${clubId} ORDER BY created_at DESC`,
+  )
+  return rows.rows.map((r) => ({
+    id: r.id,
+    numero: r.numero,
+    banco: r.banco,
+    fechaEjecucion: r.fecha_ejecucion,
+    status: r.status,
+    montoTotal: r.monto_total,
+    registros: r.registros,
+    acreditados: r.acreditados,
+    rechazados: r.rechazados,
+    generadoPor: r.generado_por,
+    createdAt: r.created_at,
+  }))
+}
+
+export async function listarLotesDebito(clubId: string): Promise<LoteDebito[]> {
+  return withTenant(clubId, ({ tx }) => listarLotesDebitoEnTx(tx, clubId))
+}
+
+/** Payments del lote: los que tienen externalRef 'debito:<numero>:…'. */
+export async function pagosDelLote(tx: Tx, clubId: string, numero: string) {
+  return tx
+    .select()
+    .from(payments)
+    .where(and(eq(payments.clubId, clubId), like(payments.externalRef, `debito:${numero}:%`)))
+    .orderBy(asc(payments.paidAt))
 }

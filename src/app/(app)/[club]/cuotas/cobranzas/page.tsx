@@ -82,6 +82,11 @@ export default async function CobranzasPage({
                 Conciliar
               </Button>
             )}
+            {puedeRegistrar && (
+              <Button render={<Link href={`/${slug}/cuotas/debito`} />} variant="outline">
+                Débito
+              </Button>
+            )}
           </>
         }
       />

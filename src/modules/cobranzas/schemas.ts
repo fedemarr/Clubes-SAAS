@@ -40,4 +40,39 @@ export const importarExtractoSchema = z.object({
 
 export type ImportarExtractoInput = z.infer<typeof importarExtractoSchema>
 
+// ---------------------------------------------------------------------------
+// M4.4 · Débito automático
+// ---------------------------------------------------------------------------
+
+export const registrarCbuDebitoSchema = z.object({
+  accountId: z.string().uuid(),
+  cbu: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^\d{22}$/.test(v), 'El CBU tiene que tener 22 dígitos (o estar vacío para quitarlo)'),
+})
+
+export type RegistrarCbuDebitoInput = z.infer<typeof registrarCbuDebitoSchema>
+
+export const generarLoteDebitoSchema = z.object({
+  banco: z.string().trim().min(1).max(60).default('generico'),
+  fechaEjecucion: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (espera AAAA-MM-DD)'),
+})
+
+export type GenerarLoteDebitoInput = z.infer<typeof generarLoteDebitoSchema>
+
+export const acreditarLoteDebitoSchema = z.object({
+  loteId: z.string().uuid(),
+})
+
+export type AcreditarLoteDebitoInput = z.infer<typeof acreditarLoteDebitoSchema>
+
+export const importarRechazosDebitoSchema = z.object({
+  loteId: z.string().uuid(),
+  texto: z.string().min(1, 'Pegá el archivo de rechazos'),
+  separador: z.enum([';', ',']).default(';'),
+})
+
+export type ImportarRechazosDebitoInput = z.infer<typeof importarRechazosDebitoSchema>
+
 export const metodoPagoSchema = z.enum(paymentMethod.enumValues)

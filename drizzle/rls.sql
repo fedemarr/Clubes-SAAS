@@ -180,7 +180,37 @@ END $$;
 -- se limpia solo y no se filtra a otro request del pool.
 -- ============================================================
 
--- 9. Notificaciones. Vive acá y no en schema.ts a propósito (ver
+-- 9. Lotes de débito automático (M4.4). Vive acá y no en schema.ts a
+--    propósito (ver DECISIONS.md — M4.4): es un artefacto del proceso
+--    bancario, no una entidad de negocio que la app manipule directamente.
+--    El lote agrupa N payments con method='debito_automatico' (externalRef
+--    = 'debito:<numero>:<accountId>') y lleva su propio estado: generado →
+--    acreditado (confirmación del banco) → cerrado (rechazos importados).
+CREATE TABLE IF NOT EXISTS debito_lotes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  numero varchar(30) NOT NULL,
+  banco varchar(60) NOT NULL DEFAULT 'generico',
+  fecha_ejecucion date NOT NULL,
+  status varchar(20) NOT NULL DEFAULT 'generado',
+  monto_total numeric(14, 2) NOT NULL DEFAULT 0,
+  registros integer NOT NULL DEFAULT 0,
+  acreditados integer NOT NULL DEFAULT 0,
+  rechazados integer NOT NULL DEFAULT 0,
+  generado_por uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON debito_lotes TO app_user;
+ALTER TABLE debito_lotes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE debito_lotes FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON debito_lotes;
+CREATE POLICY tenant_isolation ON debito_lotes
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE UNIQUE INDEX IF NOT EXISTS debito_lotes_club_numero_uq ON debito_lotes (club_id, numero);
+CREATE INDEX IF NOT EXISTS debito_lotes_club_created_idx ON debito_lotes (club_id, created_at);
+
+-- 10. Notificaciones. Vive acá y no en schema.ts a propósito (ver
 --    DECISIONS.md — M2.2): es la bandeja de entrada de eventos de dominio,
 --    no una tabla de negocio que la app manipule directamente. Se crea
 --    con IF NOT EXISTS porque, a diferencia de la sección 3, acá el

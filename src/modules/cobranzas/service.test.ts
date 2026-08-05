@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  esCbuValido,
   estadoCargoDespuesDePago,
+  generarNumeroLote,
   imputarPagoFIFO,
   normalizarFecha,
   parsearExtractoCSV,
   parsearMontoCelda,
   parsearPesosACentavos,
+  parsearRechazosCSV,
   proponerMatcheos,
+  serializarLoteCSV,
   similitudNombre,
 } from './service'
 
@@ -162,5 +166,86 @@ describe('proponerMatcheos', () => {
   it('sin candidato → sin propuesta', () => {
     const movs = [{ fecha: '2026-08-05', montoCents: 999, detalle: 'x' }]
     expect(proponerMatcheos(movs, deudores)).toEqual([{ accountId: null, confianza: null }])
+  })
+})
+
+describe('esCbuValido', () => {
+  it('acepta 22 dígitos', () => {
+    expect(esCbuValido('2850590940090418135201')).toBe(true)
+  })
+  it('rechaza CBU corto o con letras', () => {
+    expect(esCbuValido('1234')).toBe(false)
+    expect(esCbuValido('285059094009041813520a')).toBe(false)
+    expect(esCbuValido('')).toBe(false)
+  })
+})
+
+describe('generarNumeroLote', () => {
+  it('arranca en 1 por año', () => {
+    expect(generarNumeroLote(2026, null)).toBe('D-2026-001')
+  })
+  it('incrementa cuando el último lote es del mismo año', () => {
+    expect(generarNumeroLote(2026, 'D-2026-007')).toBe('D-2026-008')
+  })
+  it('reinicia la secuencia cuando el último lote es de otro año', () => {
+    expect(generarNumeroLote(2026, 'D-2025-099')).toBe('D-2026-001')
+  })
+  it('ignora un último lote con formato inválido', () => {
+    expect(generarNumeroLote(2026, 'basura')).toBe('D-2026-001')
+  })
+})
+
+describe('serializarLoteCSV', () => {
+  const registros = [
+    {
+      cbu: '2850590940090418135201',
+      titular: 'Pérez, Juan',
+      montoCents: 6500000,
+      periodo: '2026-07',
+      referencia: 'debito:D-2026-001:abc-123',
+    },
+  ]
+
+  it('genera cabecera, monto con dos decimales y CRLF', () => {
+    const csv = serializarLoteCSV(registros, ';')
+    const lineas = csv.split('\r\n').filter((l) => l !== '')
+    expect(lineas[0]).toBe('cbu;titular;monto;periodo;referencia')
+    expect(lineas[1]).toBe('2850590940090418135201;Pérez, Juan;65000.00;2026-07;debito:D-2026-001:abc-123')
+    expect(csv.endsWith('\r\n')).toBe(true)
+  })
+
+  it('escapa comillas en el titular', () => {
+    const csv = serializarLoteCSV(
+      [{ cbu: '2850590940090418135201', titular: 'Díaz "El Loco"', montoCents: 100, periodo: '2026-07', referencia: 'r' }],
+      ';',
+    )
+    expect(csv).toContain('"Díaz ""El Loco"""')
+  })
+})
+
+describe('parsearRechazosCSV', () => {
+  it('detecta referencia, CBU, monto y motivo', () => {
+    const csv = ['debito:D-2026-001:abc-123;2850590940090418135201;65000.00;001;FONDOS INSUFICIENTES'].join('\n')
+    const r = parsearRechazosCSV(csv, ';')
+    expect(r).toEqual([
+      {
+        referencia: 'debito:D-2026-001:abc-123',
+        cbu: '2850590940090418135201',
+        montoCents: 6500000,
+        codigo: '001',
+        motivo: 'FONDOS INSUFICIENTES',
+      },
+    ])
+  })
+
+  it('acepta el mismo formato del lote (cbu;titular;monto;periodo;referencia)', () => {
+    const csv = ['2850590940090418135201;Pérez, Juan;65000.00;2026-07;debito:D-2026-001:abc-123'].join('\n')
+    const r = parsearRechazosCSV(csv, ';')
+    expect(r[0]).toMatchObject({ cbu: '2850590940090418135201', montoCents: 6500000, referencia: 'debito:D-2026-001:abc-123' })
+  })
+
+  it('descarta filas vacías y basura', () => {
+    const csv = ['', 'nota sin datos', '   '].join('\n')
+    expect(parsearRechazosCSV(csv, ';')).toEqual([])
   })
 })

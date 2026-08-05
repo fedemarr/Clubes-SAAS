@@ -3,6 +3,7 @@
  * La regla central: la imputación de un pago a cargos es FIFO por vencimiento
  * (brief M4), salvo imputación manual explícita.
  */
+import { centsToDecimal } from '@/lib/money'
 
 export type CargoAbiertoImputable = {
   id: string
@@ -232,4 +233,125 @@ export function proponerMatcheos(
     }
     return { accountId: null, confianza: null }
   })
+}
+
+// ---------------------------------------------------------------------------
+// M4.4 · Débito automático. El formato de lote y de rechazos es enchufable:
+// cada banco define su propio adaptador en FORMATOS_DEBITO (hoy solo existe el
+// CSV genérico). El resto del módulo no sabe qué banco es.
+// ---------------------------------------------------------------------------
+
+export const CBU_RE = /^\d{22}$/
+
+export function esCbuValido(cbu: string): boolean {
+  return CBU_RE.test(cbu.trim())
+}
+
+/**
+ * Numera un lote: "D-<año>-<secuencia>". La secuencia arranca en 1 por año
+ * y crece solo si el último lote es del mismo año.
+ */
+export function generarNumeroLote(anio: number, ultimo: string | null): string {
+  const re = /^D-(\d{4})-(\d+)$/
+  let seq = 1
+  if (ultimo) {
+    const m = ultimo.match(re)
+    if (m && Number(m[1]) === anio) seq = Number(m[2]) + 1
+  }
+  return `D-${anio}-${String(seq).padStart(3, '0')}`
+}
+
+export type RegistroLoteDebito = {
+  cbu: string
+  titular: string
+  montoCents: number
+  periodo: string
+  /** externalRef del payment: 'debito:<numero>:<accountId>'. El banco lo
+   *  devuelve en el archivo de rechazos para matchear sin ambigüedad. */
+  referencia: string
+}
+
+export function csvEscape(campo: string, separador: string): string {
+  if (campo.includes(separador) || campo.includes('"') || campo.includes('\n') || campo.includes('\r')) {
+    return `"${campo.replace(/"/g, '""')}"`
+  }
+  return campo
+}
+
+/** Serializa el lote a CSV genérico (separador ';' por defecto, como los
+ *  extractos de la conciliación). CRLF y monto con dos decimales. */
+export function serializarLoteCSV(registros: RegistroLoteDebito[], separador = ';'): string {
+  const cabecera = ['cbu', 'titular', 'monto', 'periodo', 'referencia'].join(separador)
+  const lineas = registros.map((r) =>
+    [
+      r.cbu,
+      csvEscape(r.titular, separador),
+      centsToDecimal(r.montoCents),
+      r.periodo,
+      r.referencia,
+    ].join(separador),
+  )
+  return [cabecera, ...lineas].join('\r\n') + '\r\n'
+}
+
+export type RechazoDebito = {
+  referencia: string | null
+  cbu: string | null
+  montoCents: number
+  codigo: string | null
+  motivo: string
+}
+
+const REF_DEBITO_RE = /^(debito:[^;]+|D-\d{4}-\d+)$/
+
+/**
+ * Parsea el archivo de rechazos del banco (CSV genérico). Detecta por forma:
+ * CBU de 22 dígitos, monto numérico y referencia (externalRef del lote); el
+ * resto se junta como motivo, y un código numérico al inicio queda aparte.
+ */
+export function parsearRechazosCSV(texto: string, separador = ';'): RechazoDebito[] {
+  const filas = texto.split(/\r?\n/).filter((l) => l.trim() !== '')
+  const rechazos: RechazoDebito[] = []
+
+  for (const linea of filas) {
+    const celdas = linea.split(separador).map((c) => c.trim().replace(/^"(.*)"$/, '$1'))
+    let cbu: string | null = null
+    let montoCents: number | null = null
+    let referencia: string | null = null
+    const resto: string[] = []
+
+    for (const celda of celdas) {
+      if (celda === '') continue
+      if (!cbu && CBU_RE.test(celda)) {
+        cbu = celda
+        continue
+      }
+      if (montoCents === null && /^[+\-]?[\d.,]+$/.test(celda)) {
+        const m = parsearMontoCelda(celda)
+        if (m !== 0) {
+          montoCents = m
+          continue
+        }
+      }
+      if (!referencia && REF_DEBITO_RE.test(celda)) {
+        referencia = celda
+        continue
+      }
+      resto.push(celda)
+    }
+
+    if (montoCents === null && !referencia && !cbu) continue
+
+    let motivo = resto.join(' ').trim()
+    let codigo: string | null = null
+    const mCod = motivo.match(/^(\d{1,6})\s+(.*)$/)
+    if (mCod) {
+      codigo = mCod[1]
+      motivo = mCod[2]
+    }
+
+    rechazos.push({ referencia, cbu, montoCents: montoCents ?? 0, codigo, motivo })
+  }
+
+  return rechazos
 }
