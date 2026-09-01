@@ -1,17 +1,20 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { Bell, FileText, Home, IdCard, Wallet } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
+import { withTenant } from '@/db/tenant'
 import { auth } from '@/lib/auth/config'
 import { checkPermission } from '@/lib/permissions'
 import { rolesEnClub, STAFF_ROLES } from '@/lib/permissions'
 import { esSuperAdmin } from '@/lib/super-admin'
+import { identidadImpersonada } from '@/lib/impersonacion'
 import { brandTokens } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { AppNav, type NavItem } from '@/components/app-nav'
 import { SignOutButton } from '@/components/sign-out-button'
+import { ImpersonacionBanner } from '@/modules/super-admin/components/impersonacion-banner'
 import { MemberRedirect } from './MemberRedirect'
 
 const NAV: NavItem[] = [
@@ -106,11 +109,28 @@ export default async function ClubLayout({
   const sa = ctx ? null : await esSuperAdmin()
   if (!ctx && !sa) notFound()
 
+  // Banner de impersonación (M14): nombre y tipo de la persona imitada.
+  const imp = await identidadImpersonada()
+  let nombreImpersonado: string | null = null
+  if (imp) {
+    const res = await withTenant(club.id, async ({ tx }) =>
+      tx.execute<{ name: string }>(sql`
+        SELECT trim(first_name || ' ' || COALESCE(last_name, '')) AS name
+        FROM persons WHERE id = ${imp.personaId}
+      `),
+    )
+    nombreImpersonado = res.rows[0]?.name ?? null
+  }
+  const bannerImpersonacion = imp
+    ? <ImpersonacionBanner nombre={nombreImpersonado ?? 'persona'} tipo={imp.tipo} />
+    : null
+
   const esStaff = ctx ? ctx.roles.some((r) => STAFF_ROLES.has(r)) : true
   if (!esStaff) {
     // Shell del portal para socios/tutores (M6).
     return (
       <div style={brandTokens(club.branding?.primary ?? '#111827')} className="min-h-dvh bg-background">
+        {bannerImpersonacion}
         <MemberRedirect />
         <PortalShell
           slug={slug}
@@ -141,6 +161,7 @@ export default async function ClubLayout({
 
   return (
     <div style={brandStyle} className="min-h-dvh bg-background">
+      {bannerImpersonacion}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
           {club.logoUrl && (

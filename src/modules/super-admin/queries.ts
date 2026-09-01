@@ -262,8 +262,11 @@ export async function staffDelClub(clubId: string) {
       last_name: string
       email: string | null
       user_email: string | null
+      person_id: string
+      user_id: string | null
     }>(sql`
-      SELECT pr.role, pr.valid_from, pr.valid_to, p.first_name, p.last_name, p.email, u.email AS user_email
+      SELECT pr.role, pr.valid_from, pr.valid_to, p.first_name, p.last_name, p.email, u.email AS user_email,
+             p.id AS person_id, p.user_id
       FROM person_roles pr
       JOIN persons p ON p.id = pr.person_id
       LEFT JOIN users u ON u.id = p.user_id

@@ -4,6 +4,7 @@ import { db } from '@/db/client'
 import { clubs, personRoles, persons } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { auth } from '@/lib/auth/config'
+import { leerCookieImpersonacionCookieString, COOKIE_IMPRESION } from '@/lib/impersonacion'
 
 const RESERVED_FIRST_SEGMENT = new Set([
   'api',
@@ -44,16 +45,24 @@ export default auth(async function middleware(req) {
   }
 
   const userId = req.auth?.user?.id
-  if (userId) {
+  // Impersonación (M14): si hay una cookie firmada válida, la identidad
+  // efectiva es la persona impersonada (y su user_id), no la sesión real.
+  const impCookie = req.cookies.get(COOKIE_IMPRESION)?.value
+  const imp = impCookie ? leerCookieImpersonacionCookieString(impCookie) : null
+
+  if (userId || imp) {
     // El super admin (M9) no tiene persona en el club donde opera como
-    // staff (M10) — saltea la validación de rol vigente.
+    // staff (M10) — saltea la validación de rol vigente. Mientras
+    // impersona (M14), en cambio, DEBE validar a la persona impersonada.
     let esSuperAdmin = false
-    const email = req.auth?.user?.email
-    if (email) {
-      const saRows = await db.execute<{ id: string }>(sql`
-        SELECT id FROM super_admin_users WHERE email = ${email}
-      `)
-      esSuperAdmin = saRows.rows.length > 0
+    if (!imp) {
+      const email = req.auth?.user?.email
+      if (email) {
+        const saRows = await db.execute<{ id: string }>(sql`
+          SELECT id FROM super_admin_users WHERE email = ${email}
+        `)
+        esSuperAdmin = saRows.rows.length > 0
+      }
     }
 
     if (!esSuperAdmin) {
@@ -61,19 +70,14 @@ export default auth(async function middleware(req) {
       // de withTenant() (set_config), si no siempre devuelve cero filas.
       const activePerson = await withTenant(club.id, async ({ tx }) => {
         const today = new Date().toISOString().slice(0, 10)
-        const [row] = await tx
-          .select({ id: persons.id })
-          .from(persons)
-          .innerJoin(personRoles, eq(personRoles.personId, persons.id))
-          .where(
-            and(
-              eq(persons.clubId, club.id),
-              eq(persons.userId, userId),
-              isNull(persons.deletedAt),
-              or(isNull(personRoles.validTo), gte(personRoles.validTo, today)),
-            ),
-          )
-          .limit(1)
+        const base = and(
+          eq(persons.clubId, club.id),
+          isNull(persons.deletedAt),
+          or(isNull(personRoles.validTo), gte(personRoles.validTo, today)),
+        )
+        const [row] = imp
+          ? await tx.select({ id: persons.id }).from(persons).innerJoin(personRoles, eq(personRoles.personId, persons.id)).where(and(base, eq(persons.id, imp.personaId))).limit(1)
+          : await tx.select({ id: persons.id }).from(persons).innerJoin(personRoles, eq(personRoles.personId, persons.id)).where(and(base, eq(persons.userId, userId!))).limit(1)
         return row
       })
 

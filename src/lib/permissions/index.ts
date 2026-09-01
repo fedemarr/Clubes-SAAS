@@ -3,6 +3,7 @@ import { db } from '@/db/client'
 import { clubs, personRoles, persons, roleKind } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
 import { auth } from '@/lib/auth/config'
+import { identidadImpersonada } from '@/lib/impersonacion'
 
 export type RoleKind = (typeof roleKind.enumValues)[number]
 
@@ -81,8 +82,9 @@ export type PermissionContext = {
  * requirePermission, que encima exige que el rol cubra el permiso.
  */
 export async function rolesEnClub(clubSlug: string): Promise<PermissionContext | null> {
+  const imp = await identidadImpersonada()
   const session = await auth()
-  if (!session?.user?.id) return null
+  if (!imp && !session?.user?.id) return null
 
   const [club] = await db
     .select()
@@ -92,31 +94,43 @@ export async function rolesEnClub(clubSlug: string): Promise<PermissionContext |
   if (!club) return null
 
   const today = new Date().toISOString().slice(0, 10)
-  const userId = session.user.id
 
+  // Impersonación (M14): busco la persona impersonada en el club y uso su
+  // user_id como identidad efectiva; si la persona no tiene usuario, la
+  // impersonación no aplica (no se puede operar sobre algo sin login).
   const activeRoles = await withTenant(club.id, async ({ tx }) => {
-    return tx
-      .select({ personId: persons.id, role: personRoles.role, scopeTeamId: personRoles.scopeTeamId })
+    const rows = await tx
+      .select({
+        personId: persons.id,
+        userId: persons.userId,
+        role: personRoles.role,
+        scopeTeamId: personRoles.scopeTeamId,
+      })
       .from(persons)
       .innerJoin(personRoles, eq(personRoles.personId, persons.id))
       .where(
         and(
           eq(persons.clubId, club.id),
-          eq(persons.userId, userId),
+          imp ? eq(persons.id, imp.personaId) : eq(persons.userId, session!.user.id),
           isNull(persons.deletedAt),
           or(isNull(personRoles.validTo), gte(personRoles.validTo, today)),
         ),
       )
+    return rows
   })
 
   if (activeRoles.length === 0) return null
+  const userId = imp ? (activeRoles[0].userId ?? null) : session!.user.id
+  if (!userId) return null
 
   return {
     clubId: club.id,
     personId: activeRoles[0].personId,
     userId,
-    roles: activeRoles.map((r) => r.role),
-    scopeTeamIds: [...new Set(activeRoles.map((r) => r.scopeTeamId).filter((id): id is string => Boolean(id)))],
+    roles: [...new Set(activeRoles.map((r) => r.role))],
+    scopeTeamIds: [
+      ...new Set(activeRoles.map((r) => r.scopeTeamId).filter((id): id is string => Boolean(id))),
+    ],
   }
 }
 

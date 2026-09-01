@@ -1,13 +1,15 @@
 'use server'
 
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
+import { withTenant } from '@/db/tenant'
 import { requireSuperAdmin, registrarAccionSuperAdmin } from '@/lib/super-admin'
 import { crearCsv } from '@/lib/csv'
+import { setearCookieImpersonacion, limpiarCookieImpersonacion } from '@/lib/impersonacion'
 import { exportarAuditoriaSuperAdmin } from './queries'
 import { normalizarSportPacks } from './schemas'
 
@@ -277,5 +279,71 @@ export async function guardarSportPacks(slug: string, input: unknown): Promise<A
   )
 
   revalidatePath(`/super-admin/clubs/${slug}`)
+  return { ok: true, data: null }
+}
+
+// ───────────────────────── Impersonación (M14) ─────────────────────────
+
+const impersonarSchema = z.object({
+  personaId: z.string().uuid(),
+  tipo: z.enum(['staff', 'socio']),
+})
+
+/**
+ * Inicia la impersonación de un miembro de un club (solo SA real). Setea la
+ * cookie firmada de 15 minutos; del lado del servidor, rolesEnClub /
+ * esSuperAdmin pasan a resolver la identidad efectiva en la persona imitada
+ * (ver src/lib/impersonacion). El SA jamás pierde su sesión real.
+ */
+export async function iniciarImpersonacion(slug: string, input: unknown): Promise<ActionResult<null>> {
+  const parsed = impersonarSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  const sa = await requireSuperAdmin()
+
+  const [club] = await db.select().from(clubs).where(eq(clubs.slug, slug)).limit(1)
+  if (!club) return { ok: false, error: 'No existe ese club' }
+
+  // Valida que la persona pertenezca al club, tenga rol vigente coherente con
+  // el tipo pedido y cuente con usuario (sin login no hay nada que imitar).
+  const miembro = await withTenant(club.id, async ({ tx }) => {
+    const filtroRol = parsed.data.tipo === 'staff'
+      ? `pr.role IN ('presidente','secretaria','tesorero','coordinador','entrenador','manager')`
+      : `pr.role NOT IN ('presidente','secretaria','tesorero','coordinador','entrenador','manager')`
+    return tx.execute<{ user_id: string; name: string }>(sql`
+      SELECT p.user_id, trim(p.first_name || ' ' || COALESCE(p.last_name, '')) AS name
+      FROM persons p
+      JOIN person_roles pr ON pr.person_id = p.id
+      WHERE p.club_id = ${club.id}
+        AND p.id = ${parsed.data.personaId}
+        AND p.deleted_at IS NULL
+        AND p.user_id IS NOT NULL
+        AND (pr.valid_to IS NULL OR pr.valid_to >= current_date)
+        AND (${sql.raw(filtroRol)})
+      LIMIT 1
+    `)
+  })
+  const fila = miembro.rows[0]
+  if (!fila) {
+    return { ok: false, error: 'Esa persona no existe en el club, no tiene rol vigente o no tiene login' }
+  }
+
+  await setearCookieImpersonacion(parsed.data.tipo, parsed.data.personaId)
+
+  await registrarAccionSuperAdmin(
+    sa.email,
+    'impersonar',
+    'persons',
+    parsed.data.personaId,
+    { club: club.slug, tipo: parsed.data.tipo, persona: fila.name },
+    await ipDeRequest(),
+  )
+
+  return { ok: true, data: null }
+}
+
+/** Termina la impersonación y vuelve a la identidad real (cualquier sesión). */
+export async function terminarImpersonacion(): Promise<ActionResult<null>> {
+  await limpiarCookieImpersonacion()
   return { ok: true, data: null }
 }

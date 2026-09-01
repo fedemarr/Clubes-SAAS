@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { auth } from '@/lib/auth/config'
+import { identidadImpersonada } from '@/lib/impersonacion'
 
 /**
  * Super Admin (M9). Acceso global: el SA opera sobre todos los tenants, por
@@ -20,6 +21,10 @@ export type SuperAdminCtx = {
  * RLS) y se contrasta contra super_admin_users (global, sin RLS).
  */
 export async function esSuperAdmin(): Promise<SuperAdminCtx | null> {
+  // Mientras se impersona (M14) la identidad efectiva es la persona imitada:
+  // nunca se puede estar dentro de /super-admin ni realizar acciones de SA.
+  if (await identidadImpersonada()) return null
+
   const session = await auth()
   if (!session?.user?.id || !session.user.email) return null
 

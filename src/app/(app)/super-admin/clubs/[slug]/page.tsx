@@ -17,6 +17,7 @@ import {
 import { EditarClubForm } from '@/modules/super-admin/components/editar-club-form'
 import { SuspenderClubButton } from '@/modules/super-admin/components/suspender-club-button'
 import { SportPacksAdmin } from '@/modules/super-admin/components/sport-packs-admin'
+import { ImpersonarButton } from '@/modules/super-admin/components/impersonar-button'
 import { normalizarSportPacks } from '@/modules/super-admin/schemas'
 
 export const dynamic = 'force-dynamic'
@@ -169,6 +170,7 @@ export default async function SuperAdminClubPage({ params }: { params: Promise<{
                       <th className="px-4 py-2.5 font-medium">Persona</th>
                       <th className="px-4 py-2.5 font-medium">Email</th>
                       <th className="px-4 py-2.5 font-medium">Vigencia</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -176,8 +178,8 @@ export default async function SuperAdminClubPage({ params }: { params: Promise<{
                       [...staff].sort(
                         (a, b) =>
                           ROLES_STAFF_ORDER.indexOf(a.role) - ROLES_STAFF_ORDER.indexOf(b.role),
-                      ).map((s, i) => (
-                        <tr key={i} className="border-b last:border-b-0">
+                      ).map((s) => (
+                        <tr key={s.person_id} className="border-b last:border-b-0">
                           <td className="px-4 py-3">
                             <Badge variant="secondary">{s.role}</Badge>
                           </td>
@@ -190,11 +192,19 @@ export default async function SuperAdminClubPage({ params }: { params: Promise<{
                           <td className="px-4 py-3 text-xs text-muted-foreground">
                             {s.valid_from} → {s.valid_to ?? 'vigente'}
                           </td>
+                          <td className="px-4 py-3">
+                            <ImpersonarButton
+                              slug={club.slug}
+                              personaId={s.person_id}
+                              tipo="staff"
+                              disabled={!s.user_id}
+                            />
+                          </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
+                        <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
                           Sin staff cargado.
                         </td>
                       </tr>
