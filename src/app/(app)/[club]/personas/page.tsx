@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
+import { Eye, Pencil } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { listarCategorias } from '@/modules/categorias/queries'
@@ -67,11 +68,12 @@ export default async function PersonasPage({
               <TableHead className="hidden sm:table-cell">Socio</TableHead>
               <TableHead className="hidden md:table-cell">Categoría</TableHead>
               <TableHead className="w-28">Estado</TableHead>
+              <TableHead className="hidden w-16 text-right lg:table-cell">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {personas.map((p) => (
-              <TableRow key={p.id} className="h-11">
+              <TableRow key={p.id} className="group h-11">
                 <TableCell>
                   <Link href={`/${slug}/personas/${p.id}`} className="font-medium hover:underline">
                     {p.lastName}, {p.firstName}
@@ -86,6 +88,26 @@ export default async function PersonasPage({
                 </TableCell>
                 <TableCell>
                   <EstadoBadge status={p.status} />
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button
+                      render={<Link href={`/${slug}/personas/${p.id}`} />}
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Ver ficha"
+                    >
+                      <Eye className="size-4" />
+                    </Button>
+                    <Button
+                      render={<Link href={`/${slug}/personas/${p.id}/editar`} />}
+                      variant="ghost"
+                      size="icon-sm"
+                      title="Editar"
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

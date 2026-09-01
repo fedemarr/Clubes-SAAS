@@ -134,6 +134,68 @@ export async function revisarDocumento(clubSlug: string, input: unknown): Promis
 }
 
 // ---------------------------------------------------------------------------
+// M15 · Recordatorio al dueño (re-notificación desde el backoffice)
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-envía la notificación de un documento pendiente/vencido al dueño.
+ * No cambia nada del documento: solo vuelve a avisar (útil cuando el socio
+ * no reaccionó la primera vez). La notificación usa el canal normal.
+ */
+export async function recordarDocumento(clubSlug: string, input: unknown): Promise<ActionResult<null>> {
+  const parsed = documentoIdSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('documentos.gestionar', { kind: 'club' }, clubSlug)
+    await withTenant(
+      ctx.clubId,
+      async ({ tx, audit, onCommit }) => {
+        const { rows } = await tx.execute<{
+          id: string
+          kind: string
+          tipo_label: string | null
+          owner_user_id: string | null
+          status: string
+          expires_on: string | null
+        }>(sql`
+          SELECT d.id, d.kind, dt.label AS tipo_label, p.user_id AS owner_user_id, d.status, d.expires_on
+          FROM documents d
+          JOIN persons p ON p.id = d.person_id
+          LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind
+          WHERE d.id = ${parsed.data.documentId} AND d.club_id = ${ctx.clubId} AND d.deleted_at IS NULL
+        `)
+        const doc = rows[0]
+        if (!doc) throw new Error('No existe ese documento.')
+        if (!doc.owner_user_id) throw new Error('Ese documento no tiene un usuario dueño asignado.')
+
+        const body =
+          doc.status === 'vencido'
+            ? `Tu ${doc.tipo_label ?? doc.kind} está vencido${doc.expires_on ? ` desde el ${doc.expires_on}` : ''}. Es importante que lo actualices.`
+            : doc.status === 'pendiente'
+              ? `Recordatorio: tu ${doc.tipo_label ?? doc.kind} sigue pendiente de revisión${doc.expires_on ? ` (vence el ${doc.expires_on})` : ''}.`
+              : `Recordatorio de tu ${doc.tipo_label ?? doc.kind}. Revisá su vigencia.`
+
+        await emitirNotificaciones({ tx, onCommit }, ctx.clubId, [
+          {
+            userId: doc.owner_user_id,
+            type: 'documento.recordatorio',
+            title: 'Recordatorio de documento',
+            body,
+            data: { documentId: doc.id, kind: doc.kind },
+          },
+        ])
+        await audit('documents', doc.id, 'custom', { action: 'documento.recordatorioEnviado' })
+      },
+      { userId: ctx.userId },
+    )
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No tenés permiso para esto.' }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // M7 · Subida desde el backoffice (para una persona del club)
 // ---------------------------------------------------------------------------
 

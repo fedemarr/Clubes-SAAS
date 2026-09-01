@@ -5,6 +5,7 @@ import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import { listarCuentasConSaldo } from '@/modules/cuotas/queries'
+import { CuotasNav } from '@/modules/cuotas/components/CuotasNav'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
@@ -41,6 +42,10 @@ export default async function CuentasPage({ params }: { params: Promise<{ club: 
           </Button>
         }
       />
+
+      <div className="mt-6">
+        <CuotasNav clubSlug={slug} />
+      </div>
 
       {cuentas.length === 0 ? (
         <EmptyState className="mt-8" title="No hay cuentas corrientes todavía" />

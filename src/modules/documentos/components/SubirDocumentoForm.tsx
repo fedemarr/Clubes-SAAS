@@ -19,6 +19,35 @@ export type ActionResultUpload = { ok: true; data: { documentId: string; uploadU
 const MAX_SIZE = 15 * 1024 * 1024
 
 /**
+ * Strip EXIF en el cliente (M15): las fotos de documentos (apto, DNI, etc.)
+ * pueden traer metadatos con ubicación/dispositivo. Para JPG/PNG se redibuja
+ * el bitmap en un canvas y se re-encoda sin metadatos; para otros formatos
+ * (PDF) se deja el archivo original. Devuelve null si no se pudo limpiar.
+ */
+async function limpiarImagen(file: File): Promise<File | null> {
+  const esJpg = file.type === 'image/jpeg'
+  const esPng = file.type === 'image/png'
+  if (!esJpg && !esPng) return null
+
+  try {
+    const bitmap = await createImageBitmap(file)
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const contexto = canvas.getContext('2d')
+    if (!contexto) return null
+    contexto.drawImage(bitmap, 0, 0)
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, esJpg ? 'image/jpeg' : 'image/png', esJpg ? 0.92 : undefined),
+    )
+    if (!blob) return null
+    return new File([blob], file.name, { type: blob.type, lastModified: file.lastModified })
+  } catch {
+    return null
+  }
+}
+
+/**
  * Sube un documento (M7): elige el tipo, el archivo y las fechas. La server
  * action crea el registro pendiente y devuelve la URL firmada de R2; acá el
  * navegador sube el archivo directo (PUT). Sin R2 (dev) la URL es null y el
@@ -43,12 +72,30 @@ export function SubirDocumentoForm({
   const [personaId, setPersonaId] = useState(personas[0]?.id ?? '')
   const [kind, setKind] = useState(tipos[0]?.kind ?? '')
   const [file, setFile] = useState<File | null>(null)
+  const [limpiando, setLimpiando] = useState(false)
+  const [metaStripped, setMetaStripped] = useState(false)
   const [issuedOn, setIssuedOn] = useState('')
   const [expiresOn, setExpiresOn] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const tipo = tipos.find((t) => t.kind === kind)
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null
+    setFile(f)
+    setMetaStripped(false)
+    if (!f) return
+    if (f.type === 'image/jpeg' || f.type === 'image/png') {
+      setLimpiando(true)
+      const limpio = await limpiarImagen(f)
+      if (limpio) {
+        setFile(limpio)
+        setMetaStripped(true)
+      }
+      setLimpiando(false)
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -86,6 +133,7 @@ export function SubirDocumentoForm({
 
     setSubmitting(false)
     setFile(null)
+    setMetaStripped(false)
     setIssuedOn('')
     setExpiresOn('')
     router.refresh()
@@ -134,9 +182,15 @@ export function SubirDocumentoForm({
         <Input
           id="doc-archivo"
           type="file"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => void onFileChange(e)}
           className="h-9 cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-sm"
         />
+        {limpiando && <p className="text-xs text-muted-foreground">Limpiando metadatos de la imagen…</p>}
+        {metaStripped && (
+          <p className="text-xs text-emerald-700">
+            Se quitaron los metadatos de la imagen (EXIF) antes de subir.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

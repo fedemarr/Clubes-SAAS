@@ -8,6 +8,7 @@ import { checkPermission } from '@/lib/permissions'
 import { listarDocumentos, resumenDocumentos } from '@/modules/documentos/queries'
 import { EstadoDocumentoBadge } from '@/modules/documentos/components/EstadoDocumentoBadge'
 import { RevisarDocumentoButtons } from '@/modules/documentos/components/RevisarDocumentoButtons'
+import { RecordarDocumentoButton } from '@/modules/documentos/components/RecordarDocumentoButton'
 import { PageHeader } from '@/components/page-header'
 import { StatCard } from '@/components/stat-card'
 import { Button } from '@/components/ui/button'
@@ -147,6 +148,9 @@ export default async function DocumentosPage({
                             <Download className="size-3.5" />
                             Ver
                           </a>
+                        )}
+                        {(d.status === 'pendiente' || d.status === 'vencido') && (
+                          <RecordarDocumentoButton clubSlug={slug} documentId={d.id} />
                         )}
                         {puedeGestionar && d.status === 'pendiente' && (
                           <RevisarDocumentoButtons clubSlug={slug} documentId={d.id} />

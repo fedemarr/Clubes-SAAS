@@ -5,6 +5,7 @@ import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
 import { decimalToCents, formatARS } from '@/lib/money'
 import { listarMembresias } from '@/modules/cuotas/queries'
+import { CuotasNav } from '@/modules/cuotas/components/CuotasNav'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
@@ -44,6 +45,10 @@ export default async function MembresiasPage({ params }: { params: Promise<{ clu
         {puedeEmitir && (
           <Button render={<Link href={`/${slug}/cuotas/membresias/nueva`} />}>Alta de membresía</Button>
         )}
+      </div>
+
+      <div className="mt-4">
+        <CuotasNav clubSlug={slug} />
       </div>
 
       {membresias.length === 0 && (

@@ -8,6 +8,9 @@ export type FiltroEventos = {
   categoriaId?: string
   kind?: (typeof eventKind.enumValues)[number]
   teamIds?: string[] | null
+  /** Rango opcional (vista mes): desde/hasta inclusive, como ISO Date. */
+  desde?: Date
+  hasta?: Date
 }
 
 export async function listarEventos(clubId: string, filtro: FiltroEventos = {}) {
@@ -15,8 +18,14 @@ export async function listarEventos(clubId: string, filtro: FiltroEventos = {}) 
     const conds = [
       eq(events.clubId, clubId),
       isNull(events.deletedAt),
-      gte(events.startsAt, new Date()),
     ]
+
+    if (filtro.desde) {
+      conds.push(gte(events.startsAt, filtro.desde))
+    } else {
+      conds.push(gte(events.startsAt, new Date()))
+    }
+    if (filtro.hasta) conds.push(sql`${events.startsAt} <= ${filtro.hasta}`)
 
     if (filtro.deporte) conds.push(eq(teams.sport, filtro.deporte))
     if (filtro.categoriaId) conds.push(eq(events.teamId, filtro.categoriaId))

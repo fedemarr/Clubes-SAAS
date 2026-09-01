@@ -6,6 +6,7 @@ import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import { cajaDelDia } from '@/modules/cobranzas/queries'
+import { CuotasNav } from '@/modules/cuotas/components/CuotasNav'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 import { PageHeader } from '@/components/page-header'
@@ -93,6 +94,10 @@ export default async function CobranzasPage({
           </>
         }
       />
+
+      <div className="mt-6">
+        <CuotasNav clubSlug={slug} />
+      </div>
 
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">

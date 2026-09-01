@@ -16,6 +16,7 @@ import {
   resumenMorosidad,
 } from '@/modules/morosidad/queries'
 import { MorosidadPanel } from '@/modules/morosidad/components/MorosidadPanel'
+import { CuotasNav } from '@/modules/cuotas/components/CuotasNav'
 import { PageHeader } from '@/components/page-header'
 import { StatCard } from '@/components/stat-card'
 import { Badge } from '@/components/ui/badge'
@@ -74,6 +75,10 @@ export default async function MorosidadPage({
           </Button>
         }
       />
+
+      <div className="mt-6">
+        <CuotasNav clubSlug={slug} />
+      </div>
 
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard

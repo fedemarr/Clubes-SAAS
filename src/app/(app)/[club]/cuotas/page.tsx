@@ -6,6 +6,7 @@ import { checkPermission } from '@/lib/permissions'
 import { decimalToCents, formatARS } from '@/lib/money'
 import { listarPlanes } from '@/modules/cuotas/queries'
 import { planVigente } from '@/modules/cuotas/service'
+import { CuotasNav } from '@/modules/cuotas/components/CuotasNav'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
@@ -71,6 +72,10 @@ export default async function CuotasPage({ params }: { params: Promise<{ club: s
           )
         }
       />
+
+      <div className="mt-6">
+        <CuotasNav clubSlug={slug} />
+      </div>
 
       {planes.length === 0 && (
         <EmptyState
