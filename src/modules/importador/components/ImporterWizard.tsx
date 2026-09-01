@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, FileSpreadsheet, Upload, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Upload, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { guardarMapeo, importarImportacion, validarImportacion, type ValidacionResultado, type ImportacionResultado } from '../actions'
+import { aCsvErrores, descargarCsv } from './DescargarErroresHistorico'
 import { CAMPOS_POR_TIPO, MAX_FILAS_IMPORTACION, type MapeoImportacion, type TipoImportacion } from '../schemas'
 import type { MapeoGuardado } from '../queries'
 
@@ -536,6 +537,15 @@ export function ImporterWizard({ clubSlug, mapeos }: { clubSlug: string; mapeos:
                 <Button type="button" variant="outline" onClick={reiniciar}>
                   <Upload className="size-4" /> Importar otro
                 </Button>
+                {resultado.conErrores > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => descargarCsv(`errores_importacion.csv`, aCsvErrores(validacion.rows.filter((f) => f.estado === 'error')))}
+                  >
+                    <Download className="size-4" /> CSV de errores
+                  </Button>
+                )}
               </div>
             </div>
           ) : (

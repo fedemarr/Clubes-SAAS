@@ -5,6 +5,7 @@ import { clubs } from '@/db/schema'
 import { checkPermission } from '@/lib/permissions'
 import { esSuperAdmin } from '@/lib/super-admin'
 import { ImporterWizard } from '@/modules/importador/components/ImporterWizard'
+import { DescargarErroresHistorico } from '@/modules/importador/components/DescargarErroresHistorico'
 import { listarBatches, obtenerMapeos } from '@/modules/importador/queries'
 import { CAMPOS_POR_TIPO } from '@/modules/importador/schemas'
 import { Badge } from '@/components/ui/badge'
@@ -63,6 +64,7 @@ export default async function ImportadorPage({ params }: { params: Promise<{ clu
                   <TableHead className="text-right">Importadas</TableHead>
                   <TableHead className="text-right">Duplicadas</TableHead>
                   <TableHead className="text-right">Errores</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -81,6 +83,9 @@ export default async function ImportadorPage({ params }: { params: Promise<{ clu
                     <TableCell className="text-right tabular-nums text-green-700">{b.imported_rows}</TableCell>
                     <TableCell className="text-right tabular-nums text-amber-600">{b.skipped_rows}</TableCell>
                     <TableCell className="text-right tabular-nums text-red-600">{b.error_rows}</TableCell>
+                    <TableCell className="text-right">
+                      {b.error_rows > 0 && <DescargarErroresHistorico clubSlug={slug} batchId={b.id} />}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

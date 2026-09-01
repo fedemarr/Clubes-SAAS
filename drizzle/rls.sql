@@ -463,6 +463,8 @@ CREATE POLICY tenant_isolation ON import_batches
   USING (club_id = current_club())
   WITH CHECK (club_id = current_club());
 CREATE INDEX IF NOT EXISTS import_batches_club_created_idx ON import_batches (club_id, created_at);
+-- Detalle por fila de la corrida (estado + errores) para descargar el CSV de errores.
+ALTER TABLE import_batches ADD COLUMN IF NOT EXISTS row_errors jsonb;
 
 CREATE TABLE IF NOT EXISTS import_mappings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

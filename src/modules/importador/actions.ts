@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'crypto'
 import { and, eq, isNull, sql } from 'drizzle-orm'
+import { z } from 'zod'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
@@ -120,9 +121,11 @@ export async function importarImportacion(clubSlug: string, input: unknown): Pro
       const conErrores = validado.filter((f) => f.estado === 'error').length
 
       await tx.execute(sql`
-        INSERT INTO import_batches (id, club_id, import_type, file_name, total_rows, imported_rows, skipped_rows, error_rows, mapping, imported_by)
+        INSERT INTO import_batches (id, club_id, import_type, file_name, total_rows, imported_rows, skipped_rows, error_rows, mapping, row_errors, imported_by)
         VALUES (${batchId}, ${actor.clubId}, ${tipo}, ${fileName}, ${filas.length}, ${importados},
-                ${duplicadas}, ${conErrores}, ${JSON.stringify({ rows: filas.length })}::jsonb, ${actor.userId})
+                ${duplicadas}, ${conErrores}, ${JSON.stringify({ rows: filas.length })}::jsonb,
+                ${JSON.stringify(validado.map((f) => ({ index: f.index, estado: f.estado, errores: f.errores })))}::jsonb,
+                ${actor.userId})
       `)
       await audit('import_batches', batchId, 'custom', {
         tipo,
@@ -149,6 +152,37 @@ export async function importarImportacion(clubSlug: string, input: unknown): Pro
       duplicadas: validado.filter((f) => f.estado === 'duplicada').length,
       conErrores: validado.filter((f) => f.estado === 'error').length,
     },
+  }
+}
+
+export type FilaErrorBatch = {
+  index: number
+  estado: 'ok' | 'error' | 'duplicada'
+  errores: string[]
+}
+
+/**
+ * Devuelve el detalle por fila de una corrida guardada en el historial
+ * (solo la usan presidentes y super admin) para descargar el CSV de errores.
+ */
+export async function filasErrorBatch(clubSlug: string, input: unknown): Promise<ActionResult<FilaErrorBatch[]>> {
+  const parsed = z.object({ batchId: z.string().uuid() }).safeParse(input)
+  if (!parsed.success) return { ok: false, error: 'Datos inválidos' }
+
+  const actor = await actorImportador(clubSlug)
+  if (!actor) return { ok: false, error: 'No tenés permiso para usar el importador.' }
+
+  try {
+    const rows = await withTenant(actor.clubId, async ({ tx }) => {
+      const { rows } = await tx.execute<{ row_errors: FilaErrorBatch[] | null }>(sql`
+        SELECT row_errors FROM import_batches
+        WHERE id = ${parsed.data.batchId} AND club_id = ${actor.clubId}
+      `)
+      return (rows[0]?.row_errors ?? []) as FilaErrorBatch[]
+    })
+    return { ok: true, data: rows }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo leer la corrida.' }
   }
 }
 
