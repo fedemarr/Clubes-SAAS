@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { RegistroForm } from './RegistroForm'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { AuthBrandHeader } from '../AuthBrandHeader'
 
 export default async function RegistroPage({
   searchParams,
@@ -11,6 +12,7 @@ export default async function RegistroPage({
 
   return (
     <>
+      <AuthBrandHeader clubSlug={club} />
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle>Crear cuenta</CardTitle>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 226" role="img" aria-label="Escudo del Club Los Cedros">
+  <path d="M100,8 L164,8 C176,8 186,18 186,30 L186,108 C186,162 148,200 100,218 C52,200 14,162 14,108 L14,30 C14,18 24,8 36,8 Z"
+        fill="#2C4FB8" stroke="#0A0C10" stroke-width="11" stroke-linejoin="round"/>
+  <path d="M100,8 L164,8 C176,8 186,18 186,30 L186,108 C186,162 148,200 100,218"
+        fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3"/>
+  <circle cx="100" cy="80" r="27" fill="none" stroke="#0A0C10" stroke-width="19"/>
+  <circle cx="100" cy="80" r="27" fill="none" stroke="#F3C332" stroke-width="13"/>
+  <circle cx="100" cy="138" r="27" fill="none" stroke="#0A0C10" stroke-width="19"/>
+  <circle cx="100" cy="138" r="27" fill="none" stroke="#F3C332" stroke-width="13"/>
+  <rect x="90" y="98" width="20" height="24" fill="#2C4FB8" stroke="#0A0C10" stroke-width="6"/>
+</svg>

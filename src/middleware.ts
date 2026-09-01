@@ -18,6 +18,7 @@ const RESERVED_FIRST_SEGMENT = new Set([
   'icons',
   'offline',
   'super-admin',
+  'crests',
 ])
 
 /**

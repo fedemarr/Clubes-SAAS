@@ -1,4 +1,9 @@
+import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
+import type { CSSProperties } from 'react'
+import { db } from '@/db/client'
+import { clubs } from '@/db/schema'
+import { AuthBrandHeader } from '../AuthBrandHeader'
 import { LoginForm } from './LoginForm'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -10,12 +15,25 @@ const MENSAJES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; verificado?: string }>
+  searchParams: Promise<{ error?: string; verificado?: string; club?: string }>
 }) {
   const params = await searchParams
 
+  const club = params.club
+    ? (await db.select().from(clubs).where(and(eq(clubs.slug, params.club), isNull(clubs.deletedAt))).limit(1))[0]
+    : undefined
+
+  // El botón/foco toman el color de marca del club (mismo mecanismo que
+  // brandTokens() en src/lib/theme.ts, pero acá solo el submit necesita
+  // el override — el resto de la Card se queda con los tokens neutros de
+  // siempre para no arriesgar contraste en una pantalla de auth).
+  const brandStyle: CSSProperties | undefined = club?.branding?.primary
+    ? ({ '--primary': club.branding.primary, '--ring': club.branding.primary } as CSSProperties)
+    : undefined
+
   return (
-    <>
+    <div style={brandStyle}>
+      <AuthBrandHeader clubSlug={params.club} />
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle>Ingresar</CardTitle>
@@ -46,6 +64,6 @@ export default async function LoginPage({
           Olvidé mi contraseña
         </Link>
       </div>
-    </>
+    </div>
   )
 }
