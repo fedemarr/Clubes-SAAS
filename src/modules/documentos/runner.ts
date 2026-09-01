@@ -44,7 +44,7 @@ export async function ejecutarAlertasDocumentosCore(clubId: string): Promise<Res
                p.user_id AS owner_user_id
         FROM documents d
         JOIN persons p ON p.id = d.person_id
-        LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind
+        LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind::text
         WHERE d.club_id = ${clubId} AND d.deleted_at IS NULL AND d.status = 'vigente'
       `)
 

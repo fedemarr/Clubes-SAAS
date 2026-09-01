@@ -89,7 +89,7 @@ export async function revisarDocumento(clubSlug: string, input: unknown): Promis
           SELECT d.id, d.kind, dt.label AS tipo_label, p.user_id AS owner_user_id, d.expires_on
           FROM documents d
           JOIN persons p ON p.id = d.person_id
-          LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind
+          LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind::text
           WHERE d.id = ${parsed.data.documentId} AND d.club_id = ${ctx.clubId} AND d.deleted_at IS NULL
         `)
         const doc = rows[0]
@@ -162,7 +162,7 @@ export async function recordarDocumento(clubSlug: string, input: unknown): Promi
           SELECT d.id, d.kind, dt.label AS tipo_label, p.user_id AS owner_user_id, d.status, d.expires_on
           FROM documents d
           JOIN persons p ON p.id = d.person_id
-          LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind
+          LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind::text
           WHERE d.id = ${parsed.data.documentId} AND d.club_id = ${ctx.clubId} AND d.deleted_at IS NULL
         `)
         const doc = rows[0]

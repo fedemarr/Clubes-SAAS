@@ -126,7 +126,7 @@ export async function listarDocumentosTx(
     SELECT ${DOCUMENTO_COLUMNS}
     FROM documents d
     JOIN persons p ON p.id = d.person_id
-    LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind
+    LEFT JOIN document_types dt ON dt.club_id = d.club_id AND dt.kind = d.kind::text
     LEFT JOIN users r ON r.id = d.reviewed_by
     WHERE ${sql.join(condiciones, sql` AND `)}
     ORDER BY d.created_at DESC
