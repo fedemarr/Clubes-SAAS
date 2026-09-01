@@ -16,6 +16,8 @@ import {
 } from '@/modules/super-admin/queries'
 import { EditarClubForm } from '@/modules/super-admin/components/editar-club-form'
 import { SuspenderClubButton } from '@/modules/super-admin/components/suspender-club-button'
+import { SportPacksAdmin } from '@/modules/super-admin/components/sport-packs-admin'
+import { normalizarSportPacks } from '@/modules/super-admin/schemas'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +74,11 @@ export default async function SuperAdminClubPage({ params }: { params: Promise<{
         defaultValue="general"
         items={[
           { value: 'general', label: 'General', content: <EditarClubForm club={club} /> },
+          {
+            value: 'sport-packs',
+            label: 'Sport packs',
+            content: <SportPacksAdmin slug={club.slug} inicial={normalizarSportPacks(club.sportPack)} categorias={categorias} />,
+          },
           {
             value: 'planes',
             label: 'Planes de cuota',

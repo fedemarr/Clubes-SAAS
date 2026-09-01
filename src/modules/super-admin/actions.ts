@@ -9,6 +9,7 @@ import { clubs } from '@/db/schema'
 import { requireSuperAdmin, registrarAccionSuperAdmin } from '@/lib/super-admin'
 import { crearCsv } from '@/lib/csv'
 import { exportarAuditoriaSuperAdmin } from './queries'
+import { normalizarSportPacks } from './schemas'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -212,4 +213,69 @@ export async function exportarAuditoriaCsv(): Promise<ActionResult<string>> {
   )
 
   return { ok: true, data: crearCsv(filas) }
+}
+
+// ───────────────────────── Sport Packs (M13) ─────────────────────────
+
+const sportPacksSchema = z.object({
+  deportes: z
+    .array(
+      z.object({
+        key: z
+          .string()
+          .min(1)
+          .max(40)
+          .regex(/^[a-z0-9]+$/, 'Clave inválida (solo minúsculas y números)'),
+        label: z.string().min(1).max(40),
+        posiciones: z.array(z.string().trim().min(1).max(40)).max(30),
+        tiposPartido: z.array(z.string().trim().min(1).max(40)).max(10),
+      }),
+    )
+    .max(20),
+})
+
+/**
+ * Reemplaza el sport_pack JSONB de un club (solo SA). El JSON es un mapa
+ * { [sportKey]: { label, posiciones[], tiposPartido[] } }.
+ * La acción reemplaza el mapa entero, preservando keys desconocidas no
+ * presentes en el input (aunque hoy el sistema solo usa estas).
+ */
+export async function guardarSportPacks(slug: string, input: unknown): Promise<ActionResult<null>> {
+  const parsed = sportPacksSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  const sa = await requireSuperAdmin()
+
+  const [club] = await db.select().from(clubs).where(eq(clubs.slug, slug)).limit(1)
+  if (!club) return { ok: false, error: 'No existe ese club' }
+
+  const antes = normalizarSportPacks(club.sportPack)
+  const deportes: Record<string, unknown> = {}
+  for (const d of parsed.data.deportes) {
+    deportes[d.key] = { label: d.label, posiciones: d.posiciones, tiposPartido: d.tiposPartido }
+  }
+
+  // Preservar keys no conocidas del JSONB original (si las hubiera).
+  if (club.sportPack && typeof club.sportPack === 'object') {
+    for (const [k, v] of Object.entries(club.sportPack)) {
+      if (!(k in deportes)) deportes[k] = v
+    }
+  }
+
+  await db
+    .update(clubs)
+    .set({ sportPack: deportes, updatedAt: new Date() })
+    .where(eq(clubs.id, club.id))
+
+  await registrarAccionSuperAdmin(
+    sa.email,
+    'update',
+    'sport_packs',
+    club.id,
+    { slug: club.slug, antes: antes.map((e) => e.key), despues: Object.keys(deportes) },
+    await ipDeRequest(),
+  )
+
+  revalidatePath(`/super-admin/clubs/${slug}`)
+  return { ok: true, data: null }
 }
