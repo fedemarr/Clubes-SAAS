@@ -1,5 +1,6 @@
 ## Objective
-- **M7 · Documentos y vencimientos** completo (push `44576e1`): tipos de documento config por club, subida/descarga con R2 (URLs firmadas), revisión staff (aprobar/rechazar con motivo), estados pendiente/vigente/vencido/rechazado, alertas `alert_days` (30/15/3) con push post-commit, bandeja staff `/documentos`, config `/documentos/tipos`, tab en la ficha de persona y portal del socio (`/portal/documentos`). Verificado tsc/eslint/115 tests/build. M6 cerró en `331ecfc`; push M6 en `9e73ec6`; M5 en `6a16c2d`.
+- **M8 · Dashboards por rol** completo (sin push aún): `src/modules/dashboards/{queries.ts,components/{bar-chart,section-card}.tsx}` (agregaciones para dashboard: personas, categorías, deuda, cobrado hoy, próximos eventos, resumen documentos, morosidad con tramos + evolución, top deudores, pagos recientes), `dashboard/page.tsx` refactoreado a ramificar por rol (`rolesEnClub().roles`): presidente/tesorero ven panel financiero (barras de morosidad por tramo, evolución deuda, mayores deudas, cobros recientes), secretaria ve documentos pendientes, coordinador/entrenador solo KPIs + módulos + próximos eventos. Sin dependencias nuevas: barras CSS/Tailwind (precedente morosidad). Verificado tsc/eslint/115 tests/build. M7 cerró en push `44576e1`; M6 `9e73ec6`; M5 `6a16c2d`.
+- **Plan M8–M12 definido**: M8 Dashboards por rol (hecho), M9 Super Admin (tabla `super_admin_users`/`super_admin_log` sección 14 de rls.sql, global sin RLS, guard solo `fede@fmcode.com`), M10 Importador (wizard 6 pasos, genérico con mapeo manual, dependencia nueva `xlsx`), M11 Exportador (Excel multi-sheet, `xlsx`), M12 Mejora visual portal socio (estilo San Miguel Rugby: perfil grande, badge semáforo de cuota, QR prominente, beneficios). Fuente del plan: respuestas del checklist (email SA definido, `xlsx` aprobada, arranca M8, importador genérico).
 
 ## Important Details
 - **Deploy**: repo `https://github.com/fedemarr/Clubes-SAAS.git`, Vercel `fmcodes-projects/club-saas`, auto-deploy desde `main`. `origin/main` en `44576e1` (M7 push). Previos: `9e73ec6`, `6faae95`, `331ecfc` (M6 portal), `6a16c2d` (M5), `bb72c04`, `d55fc8a`, `6292e2b`, `31291fa`, `7b938ca`.
@@ -37,6 +38,7 @@
 - **M7 · Lógica**: `src/modules/documentos/` — `schemas.ts` (KINDS_DOCUMENTO, guardarTipoDocumentoSchema, revisarDocumentoSchema con motivo obligatorio al rechazar, subirDocumentoSchema con tamaño máx, documentoIdSchema), `queries.ts` (listarTiposDocumento, tiposHabilitados, listarDocumentos + listarDocumentosTx con URL de descarga, resumenDocumentos), `service.ts` (tipoDocumentoPorKindTx, insertarDocumentoTx), `actions.ts` (guardarTipoDocumento, revisarDocumento con push al dueño, subirDocumentoStaff, cancelarSubidaStaff), `runner.ts` (ejecutarAlertasDocumentosCore) + cron `/api/cron/documentos` a las 13:00 UTC con guard CRON_SECRET.
 - **M7 · Portal**: `misDocumentos` + `grupoFamiliar` en `src/modules/portal/queries.ts`, `iniciarSubidaDocumento`/`borrarDocumento` en `actions.ts` (validan grupo familiar, borran solo pendiente/rechazado, borran objeto R2 best-effort).
 - **M7 · UI**: bandeja `/documentos` (resumen + filtros por estado + tabla + `RevisarDocumentoButtons`), config `/documentos/tipos` (`TiposDocumentoForm` por tipo: label, requiere vencimiento, días de aviso, habilitado), tab `documentos` en `personas/[id]` (`DocumentosPersonaTab` con subida staff), portal `/portal/documentos` (secciones por estado + `SubirDocumentoForm` del socio con grupo familiar + `BorrarDocumentoButton`), entrada en `PORTAL_NAV`. Componentes: `EstadoDocumentoBadge`, `RevisarDocumentoButtons`, `SubirDocumentoForm` (reuso staff/portal con `showPersona`/`action`), `TiposDocumentoForm`, `DocumentosPersonaTab`, `BorrarDocumentoButton`.
+- **M8 · Dashboards por rol** (sin push aún): `src/modules/dashboards/queries.ts` (`cargarDashboard` agrega personas/categorías/deuda/cobrado hoy/planes, próximos eventos, resumen documentos, morosidad tramos + evolución, top deudores, pagos recientes, todo permission-gated), `components/{bar-chart,section-card}.tsx` (barras CSS + card de sección), `dashboard/page.tsx` ramificado por rol: presidente/tesorero → panel financiero (barras morosidad por tramo, evolución deuda, mayores deudas, cobros recientes), secretaria → documentos pendientes, coordinador/entrenador → solo KPIs + módulos + próximos eventos. Sin dependencias nuevas. Verificado tsc/eslint/115 tests/build.
 
 ### Active
 - (none)
@@ -45,8 +47,8 @@
 - (none)
 
 ## Next Move
-1. **M8 · Dashboards por rol**.
-2. (none)
+1. **Push M8** (Dashboards por rol) a `main` cuando corresponda.
+2. **M9 Super Admin**: tabla `super_admin_users`/`super_admin_log` (sección 14 rls.sql, global sin RLS, guard `fede@fmcode.com`), CRUD de clubs (general / sport packs / planes / categorías / auditoría / staff), dashboard de clubs con métricas, `/super-admin` fuera de RLS.
 
 ## Relevant Files
 - `src/lib/permissions/index.ts`: `rolesEnClub`, `STAFF_ROLES`, `requirePermission`/`checkPermission`, `ROLE_PERMISSIONS` con `notificaciones.ver` para tutor/jugador.
@@ -69,4 +71,6 @@
 - `src/lib/storage/r2.ts`: client R2 + URLs firmadas (`firmarUrlSubida` 15 min / `firmarUrlDescarga` 5 min / `borrarObjeto`).
 - `src/app/api/cron/documentos/route.ts` + `vercel.json`: cron 13:00 UTC de alertas de vencimiento.
 - `src/db/seed-documentos.ts` + script `db:seed:m7`: seed idempotente de tipos de documento.
+- `src/modules/dashboards/`: `queries.ts` (`cargarDashboard` permission-gated: personas/categorías/deuda/cobrado hoy/planes + próximos eventos + resumen documentos + morosidad tramos/evolución + top deudores + pagos recientes; `pagosRecientes`; `cuentasDeudoras`; `rangoDiaLocal`), `components/{bar-chart.tsx,section-card.tsx}` (barras CSS `Barra` + `SectionCard`).
+- `src/app/(app)/[club]/dashboard/page.tsx`: ramifica por `rolesEnClub().roles` — presidente/tesorero panel financiero, secretaria documentos pendientes, staff general KPIs + módulos + próximos eventos.
 - `drizzle/rls.sql`: secciones 10–13 aplicadas.

@@ -1,115 +1,118 @@
 import Link from 'next/link'
-import { and, eq, isNull } from 'drizzle-orm'
 import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  FileText,
   HandCoins,
   ShieldAlert,
   Trophy,
   Users,
   Wallet,
 } from 'lucide-react'
-import { db } from '@/db/client'
-import { clubs } from '@/db/schema'
-import { checkPermission } from '@/lib/permissions'
+import { checkPermission, rolesEnClub } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
-import { buscarPersonas } from '@/modules/personas/queries'
-import { listarCategorias } from '@/modules/categorias/queries'
-import { listarPlanesVigentes, listarCuentasConSaldo } from '@/modules/cuotas/queries'
-import { listarEventos } from '@/modules/eventos/queries'
-import { cajaDelDia } from '@/modules/cobranzas/queries'
 import { StatCard } from '@/components/stat-card'
+import { Barra } from '@/modules/dashboards/components/bar-chart'
+import { SectionCard } from '@/modules/dashboards/components/section-card'
+import { cargarDashboard } from '@/modules/dashboards/queries'
 
 type QuickLink = { href: string; titulo: string; desc: string; icon: typeof Users }
 
-function rangoDiaLocal(timezone: string, ahora = new Date()): { desde: Date; hasta: Date } {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const [y, m, d] = fmt.format(ahora).split('-').map(Number)
-  return {
-    desde: new Date(Date.UTC(y, m - 1, d)),
-    hasta: new Date(Date.UTC(y, m - 1, d + 1)),
-  }
+const DIAS_SEMANA_FMT = new Intl.DateTimeFormat('es-AR', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+})
+const HORA_FMT = new Intl.DateTimeFormat('es-AR', {
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const TRAMOS_LABEL: Record<'1' | '2' | '3' | '4', string> = {
+  1: '1-3 meses',
+  2: '3-6 meses',
+  3: '6-12 meses',
+  4: '> 12 meses',
 }
 
 export default async function DashboardPage({ params }: { params: Promise<{ club: string }> }) {
   const { club: slug } = await params
+  const ctx = await rolesEnClub(slug)
+  if (!ctx) return null
 
-  const [club] = await db
-    .select()
-    .from(clubs)
-    .where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt)))
-    .limit(1)
-  if (!club) return null
+  const [verPersonas, verCategorias, verCuotas, verCobranzas, verCalendario, verMorosidad, verDocumentos] =
+    await Promise.all([
+      checkPermission('personas.ver', { kind: 'club' }, slug),
+      checkPermission('categorias.ver', { kind: 'club' }, slug),
+      checkPermission('cuotas.ver', { kind: 'club' }, slug),
+      checkPermission('cobranzas.ver', { kind: 'club' }, slug),
+      checkPermission('calendario.ver', { kind: 'club' }, slug),
+      checkPermission('morosidad.ver', { kind: 'club' }, slug),
+      checkPermission('documentos.ver', { kind: 'club' }, slug),
+    ])
 
-  const [verPersonas, verCategorias, verCuotas, verCobranzas, verCalendario] = await Promise.all([
-    checkPermission('personas.ver', { kind: 'club' }, slug),
-    checkPermission('categorias.ver', { kind: 'club' }, slug),
-    checkPermission('cuotas.ver', { kind: 'club' }, slug),
-    checkPermission('cobranzas.ver', { kind: 'club' }, slug),
-    checkPermission('calendario.ver', { kind: 'club' }, slug),
-  ])
-
-  const [personas, categorias, planes, cuentas, eventos, cobrosHoy] = await Promise.all([
-    verPersonas ? buscarPersonas(club.id, {}) : Promise.resolve([]),
-    verCategorias ? listarCategorias(club.id, { soloActivas: true }) : Promise.resolve([]),
-    verCuotas ? listarPlanesVigentes(club.id) : Promise.resolve([]),
-    verCuotas ? listarCuentasConSaldo(club.id) : Promise.resolve([]),
-    verCalendario ? listarEventos(club.id) : Promise.resolve([]),
-    verCobranzas ? cajaDelDia(club.id, ...(Object.values(rangoDiaLocal(club.timezone)) as [Date, Date])) : Promise.resolve([]),
-  ])
-
-  const activos = personas.filter((p) => p.status === 'activo').length
-  const deudaCents = cuentas.reduce((acc, c) => acc + Math.max(0, c.balanceCents), 0)
-  const cobradoHoyCents = cobrosHoy.reduce((acc, c) => acc + c.montoCents, 0)
-  const proximoEvento = eventos[0]
-
-  const accesos: QuickLink[] = [
-    {
-      href: '/personas',
-      titulo: 'Padrón',
-      desc: verPersonas ? `${personas.length} personas registradas` : 'Buscar personas',
-      icon: Users,
+  const resumen = await cargarDashboard({
+    slug,
+    permisos: {
+      verPersonas: Boolean(verPersonas),
+      verCategorias: Boolean(verCategorias),
+      verCuotas: Boolean(verCuotas),
+      verCobranzas: Boolean(verCobranzas),
+      verCalendario: Boolean(verCalendario),
+      verMorosidad: Boolean(verMorosidad),
+      verDocumentos: Boolean(verDocumentos),
     },
-    {
-      href: '/categorias',
-      titulo: 'Categorías',
-      desc: verCategorias ? `${categorias.length} activas` : 'Deportes y planteles',
-      icon: Trophy,
-    },
-    {
-      href: '/calendario',
-      titulo: 'Calendario',
-      desc: proximoEvento?.title ?? 'Eventos y convocatorias',
-      icon: CalendarDays,
-    },    {
-      href: '/cuotas',
-      titulo: 'Cuotas',
-      desc: verCuotas ? `${planes.length} planes vigentes` : 'Planes y cuenta corriente',
-      icon: Wallet,
-    },
-  ].filter((s) => s.href !== '/cuotas' || verCuotas)
+  })
+  if (!resumen) return null
+
+  const esPresidente = ctx.roles.includes('presidente')
+  const esTesorero = ctx.roles.includes('tesorero')
+  const esSecretaria = ctx.roles.includes('secretaria')
+  const perspectivaFinanciera = verCuotas || verCobranzas
 
   const fechaHoy = new Intl.DateTimeFormat('es-AR', {
-    timeZone: club.timezone,
+    timeZone: resumen.timezone,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   }).format(new Date())
 
+  const accesos: QuickLink[] = [
+    {
+      href: '/personas',
+      titulo: 'Padrón',
+      desc: verPersonas ? `${resumen.personasActivas} personas activas` : 'Buscar personas',
+      icon: Users,
+    },
+    {
+      href: '/categorias',
+      titulo: 'Categorías',
+      desc: verCategorias ? `${resumen.categoriasActivas} activas` : 'Deportes y planteles',
+      icon: Trophy,
+    },
+    {
+      href: '/calendario',
+      titulo: 'Calendario',
+      desc: resumen.proximosEventos[0]?.title ?? 'Eventos y convocatorias',
+      icon: CalendarDays,
+    },
+    {
+      href: '/cuotas',
+      titulo: 'Cuotas',
+      desc: verCuotas ? `${resumen.planesVigentes} planes vigentes` : 'Planes y cuenta corriente',
+      icon: Wallet,
+    },
+  ].filter((s) => s.href !== '/cuotas' || verCuotas)
+
   return (
     <main>
       <div className="flex items-center gap-3">
-        {club.logoUrl && (
+        {resumen.logoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={club.logoUrl}
+            src={resumen.logoUrl}
             alt=""
             width={44}
             height={44}
@@ -117,7 +120,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ club
           />
         )}
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{club.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{resumen.clubName}</h1>
           <p className="text-sm text-muted-foreground capitalize">{fechaHoy}</p>
         </div>
       </div>
@@ -126,33 +129,41 @@ export default async function DashboardPage({ params }: { params: Promise<{ club
         {verPersonas && (
           <StatCard
             label="Personas activas"
-            value={activos}
-            hint={`${personas.length} en el padrón`}
+            value={resumen.personasActivas}
+            hint={`${resumen.personasTotales} en el padrón`}
             icon={Users}
           />
         )}
         {verCategorias && (
-          <StatCard label="Categorías activas" value={categorias.length} icon={Trophy} />
+          <StatCard label="Categorías activas" value={resumen.categoriasActivas} icon={Trophy} />
         )}
         {verCuotas && (
           <StatCard
             label="Deuda total"
-            value={formatARS(deudaCents)}
-            hint={`${cuentas.filter((c) => c.balanceCents > 0).length} cuentas deudoras`}
+            value={formatARS(resumen.deudaTotalCents)}
+            hint={`${resumen.cuentasDeudorasCount} cuentas deudoras`}
             icon={ShieldAlert}
-            accent={deudaCents > 0 ? 'danger' : 'success'}
+            accent={resumen.deudaTotalCents > 0 ? 'danger' : 'success'}
           />
         )}
         {verCobranzas && (
           <StatCard
             label="Cobrado hoy"
-            value={formatARS(cobradoHoyCents)}
-            hint={`${cobrosHoy.length} cobros`}
+            value={formatARS(resumen.cobradoHoyCents)}
+            hint={`${resumen.cobrosHoyCount} cobros`}
             icon={HandCoins}
-            accent={cobradoHoyCents > 0 ? 'success' : 'default'}
+            accent={resumen.cobradoHoyCents > 0 ? 'success' : 'default'}
           />
         )}
       </div>
+
+      {(esPresidente || esTesorero) && perspectivaFinanciera && resumen.morosidad && (
+        <DashboardFinanciero resumen={resumen} slug={slug} />
+      )}
+
+      {esSecretaria && verDocumentos && resumen.documentosPendientes > 0 && (
+        <DashboardDocumentos resumen={resumen} slug={slug} />
+      )}
 
       <section className="mt-8">
         <div className="mb-3 flex items-center justify-between">
@@ -181,54 +192,228 @@ export default async function DashboardPage({ params }: { params: Promise<{ club
         </div>
       </section>
 
-      {verCalendario && (
-        <section className="mt-8">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold tracking-tight">Próximo evento</h2>
+      {verCalendario && <ProximosEventos resumen={resumen} slug={slug} />}
+    </main>
+  )
+}
+
+function DashboardFinanciero(
+  { resumen, slug }: {
+    resumen: NonNullable<Awaited<ReturnType<typeof cargarDashboard>>>
+    slug: string
+  },
+) {
+  const tramos = resumen.morosidad!.tramos
+  const maxTramo = Math.max(1, ...Object.values(tramos).map((t) => t.montoCents))
+  const evolucion = resumen.morosidad!.evolucion
+  const maxEvol = Math.max(1, ...evolucion.map((e) => e.deudaCents))
+
+  return (
+    <>
+      <section className="mt-8 grid gap-4 lg:grid-cols-3">
+        <SectionCard title="Morosidad por antigüedad" className="lg:col-span-1">
+          <div className="space-y-3">
+            {(['1', '2', '3', '4'] as const).map((k) => (
+              <Barra
+                key={k}
+                label={TRAMOS_LABEL[k]}
+                valor={tramos[k].montoCents}
+                max={maxTramo}
+                hint={`${tramos[k].cuentas} cuentas · ${formatARS(tramos[k].montoCents)}`}
+              />
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Evolución de la deuda"
+          className="lg:col-span-2"
+          action={
             <Link
-              href={`/${slug}/calendario`}
+              href={`/${slug}/cuotas/morosidad`}
               className="text-xs font-medium text-muted-foreground hover:text-foreground"
             >
-              Ver calendario
+              Ver morosidad
             </Link>
-          </div>
-          {proximoEvento ? (
-            <div className="flex items-center gap-4 rounded-xl border bg-card p-4 shadow-xs">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                {proximoEvento.kind === 'partido' ? <Trophy className="size-5" /> : <Clock3 className="size-5" />}
+          }
+        >
+          {evolucion.length > 0 ? (
+            <div className="flex h-32 items-end gap-1.5">
+              {evolucion.map((e) => {
+                const pct = maxEvol > 0 ? Math.round((e.deudaCents / maxEvol) * 100) : 0
+                return (
+                  <div key={e.mes} className="flex flex-1 flex-col items-center gap-1">
+                    <span className="text-[10px] tabular-nums text-muted-foreground">
+                      {formatARS(e.deudaCents)}
+                    </span>
+                    <div
+                      className="w-full rounded-t bg-primary/70"
+                      style={{ height: `${Math.max(3, pct)}%` }}
+                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      {e.mes.slice(5)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <EmptyMini>Sin datos de evolución.</EmptyMini>
+          )}
+        </SectionCard>
+      </section>
+
+      <section className="mt-4 grid gap-4 lg:grid-cols-2">
+        <SectionCard
+          title="Mayores deudas"
+          action={
+            <Link
+              href={`/${slug}/cuotas/cobranzas`}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Ver cobranzas
+            </Link>
+          }
+        >
+          {resumen.topDeudores.length > 0 ? (
+            <ul className="space-y-2.5">
+              {resumen.topDeudores.map((d) => (
+                <li key={d.accountId} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-sm">
+                    {d.holderNombre} {d.holderApellido}
+                  </span>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums text-red-600">
+                    {formatARS(d.balanceCents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyMini>Sin cuentas deudoras 🎉</EmptyMini>
+          )}
+        </SectionCard>
+
+        <SectionCard title="Cobros recientes">
+          {resumen.pagosRecientes.length > 0 ? (
+            <ul className="space-y-2.5">
+              {resumen.pagosRecientes.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm">
+                      {p.holderNombre} {p.holderApellido}
+                    </p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {p.method.replace('_', ' ')}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold tabular-nums text-green-600">
+                      {formatARS(p.montoCents)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyMini>Sin cobros registrados.</EmptyMini>
+          )}
+        </SectionCard>
+      </section>
+    </>
+  )
+}
+
+function DashboardDocumentos(
+  { resumen, slug }: {
+    resumen: NonNullable<Awaited<ReturnType<typeof cargarDashboard>>>
+    slug: string
+  },
+) {
+  return (
+    <section className="mt-8">
+      <SectionCard
+        title="Documentos por revisar"
+        action={
+          <Link
+            href={`/${slug}/documentos`}
+            className="text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            Ver bandeja
+          </Link>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-yellow-500" />
+            {resumen.documentosPendientes} pendientes
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-red-500" />
+            {resumen.documentosVencidos} vencidos
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-green-500" />
+            {resumen.documentosVigentes} vigentes
+          </span>
+          <span className="ml-auto flex items-center gap-1.5 text-muted-foreground">
+            <FileText className="size-4" />
+            {resumen.documentosPendientes + resumen.documentosVencidos} requieren atención
+          </span>
+        </div>
+      </SectionCard>
+    </section>
+  )
+}
+
+function ProximosEventos(
+  { resumen, slug }: {
+    resumen: NonNullable<Awaited<ReturnType<typeof cargarDashboard>>>
+    slug: string
+  },
+) {
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold tracking-tight">Próximos eventos</h2>
+        <Link
+          href={`/${slug}/calendario`}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          Ver calendario
+        </Link>
+      </div>
+      {resumen.proximosEventos.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {resumen.proximosEventos.map((e) => (
+            <div key={e.id} className="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-xs">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                {e.kind === 'partido' ? <Trophy className="size-5" /> : <Clock3 className="size-5" />}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{proximoEvento.title}</p>
+                <p className="truncate text-sm font-medium">{e.title}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {proximoEvento.categoriaLabel ?? 'Sin categoría'} · {proximoEvento.location ?? 'Sin lugar'}
+                  {e.categoriaLabel ?? 'Sin categoría'} · {e.location ?? 'Sin lugar'}
                 </p>
               </div>
               <div className="shrink-0 text-right text-xs text-muted-foreground">
                 <p className="font-medium text-foreground">
-                  {new Intl.DateTimeFormat('es-AR', {
-                    timeZone: club.timezone,
-                    weekday: 'short',
-                    day: 'numeric',
-                    month: 'short',
-                  }).format(proximoEvento.startsAt)}
+                  {DIAS_SEMANA_FMT.format(e.startsAt)}
                 </p>
-                <p>
-                  {new Intl.DateTimeFormat('es-AR', {
-                    timeZone: club.timezone,
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  }).format(proximoEvento.startsAt)}
-                </p>
+                <p>{HORA_FMT.format(e.startsAt)}</p>
               </div>
             </div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-              <CheckCircle2 className="size-4 shrink-0" />
-              No hay eventos próximos cargados.
-            </div>
-          )}
-        </section>
+          ))}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+          <CheckCircle2 className="size-4 shrink-0" />
+          No hay eventos próximos cargados.
+        </div>
       )}
-    </main>
+    </section>
   )
+}
+
+function EmptyMini({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>
 }
