@@ -89,9 +89,20 @@ export type EventoPortal = {
 }
 
 export type DatosPortal = {
-  persona: { id: string; firstName: string; lastName: string }
+  persona: {
+    id: string
+    firstName: string
+    lastName: string
+    photoUrl: string | null
+    docType: string
+    docNumber: string | null
+  }
   cuentas: CuentaPortal[]
   proximoEvento: EventoPortal | null
+  /** Categorías del usuario (no del grupo familiar), para el encabezado. */
+  categorias: { teamId: string; label: string; sport: string }[]
+  /** Plan activo del usuario para la tarjeta de débito automático (visual). */
+  cuotaPlan: { planNombre: string; montoCents: number } | null
 }
 
 /**
@@ -102,13 +113,36 @@ export type DatosPortal = {
 export async function datosPortal(clubId: string, memberPersonId: string): Promise<DatosPortal> {
   return withTenant(clubId, async ({ tx }) => {
     const [persona] = await tx
-      .select({ id: persons.id, firstName: persons.firstName, lastName: persons.lastName })
+      .select({
+        id: persons.id,
+        firstName: persons.firstName,
+        lastName: persons.lastName,
+        photoUrl: persons.photoUrl,
+        docType: persons.docType,
+        docNumber: persons.docNumber,
+      })
       .from(persons)
       .where(and(eq(persons.clubId, clubId), eq(persons.id, memberPersonId)))
       .limit(1)
-    if (!persona) return { persona: { id: memberPersonId, firstName: '', lastName: '' }, cuentas: [], proximoEvento: null }
+    if (!persona) {
+      return {
+        persona: {
+          id: memberPersonId,
+          firstName: '',
+          lastName: '',
+          photoUrl: null,
+          docType: 'DNI',
+          docNumber: null,
+        },
+        cuentas: [],
+        proximoEvento: null,
+        categorias: [],
+        cuotaPlan: null,
+      }
+    }
 
     const personIds = await personasDelMiembroTx(tx, clubId, memberPersonId)
+    const hoy = new Date().toISOString().slice(0, 10)
 
     const membresias = await tx
       .select({ accountId: memberships.accountId })
@@ -173,7 +207,6 @@ export async function datosPortal(clubId: string, memberPersonId: string): Promi
       })
     }
 
-    const hoy = new Date().toISOString().slice(0, 10)
     const teamIds = (
       await tx
         .select({ teamId: teamMembers.teamId })
@@ -216,7 +249,38 @@ export async function datosPortal(clubId: string, memberPersonId: string): Promi
       proximoEvento = evento ?? null
     }
 
-    return { persona, cuentas, proximoEvento }
+    const categorias = await tx
+      .select({ teamId: teams.id, label: teams.label, sport: teams.sport })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+      .where(
+        and(
+          eq(teamMembers.clubId, clubId),
+          eq(teamMembers.personId, memberPersonId),
+          or(isNull(teamMembers.validTo), gte(teamMembers.validTo, hoy)),
+        ),
+      )
+
+    const [plan] = await tx
+      .select({ planNombre: feePlans.name, monto: feePlans.amount })
+      .from(memberships)
+      .innerJoin(feePlans, eq(feePlans.id, memberships.feePlanId))
+      .where(
+        and(
+          eq(memberships.clubId, clubId),
+          eq(memberships.personId, memberPersonId),
+          eq(memberships.status, 'activa'),
+        ),
+      )
+      .limit(1)
+
+    return {
+      persona,
+      cuentas,
+      proximoEvento,
+      categorias,
+      cuotaPlan: plan ? { planNombre: plan.planNombre, montoCents: decimalToCents(plan.monto) } : null,
+    }
   })
 }
 

@@ -481,3 +481,25 @@ CREATE POLICY tenant_isolation ON import_mappings
   USING (club_id = current_club())
   WITH CHECK (club_id = current_club());
 CREATE UNIQUE INDEX IF NOT EXISTS import_mappings_club_type_uq ON import_mappings (club_id, import_type);
+
+-- 16. Beneficios del portal (M12). Beneficios dinámicos para socios,
+--     configurables por club desde el backoffice y mostrados en el portal.
+CREATE TABLE IF NOT EXISTS club_benefits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  title varchar(160) NOT NULL,
+  description text,
+  icon varchar(40),
+  sort integer NOT NULL DEFAULT 0,
+  active boolean NOT NULL DEFAULT true,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON club_benefits TO app_user;
+ALTER TABLE club_benefits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE club_benefits FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON club_benefits;
+CREATE POLICY tenant_isolation ON club_benefits
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE INDEX IF NOT EXISTS club_benefits_club_sort_idx ON club_benefits (club_id, sort);

@@ -1,14 +1,26 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CalendarDays, CreditCard, MapPin, TrendingDown, Trophy } from 'lucide-react'
+import {
+  CalendarDays,
+  CheckCircle2,
+  CreditCard,
+  Gift,
+  MapPin,
+  Trophy,
+  Wallet,
+} from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { rolesEnClub } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import { datosPortal, type CuentaPortal } from '@/modules/portal/queries'
+import { listarBeneficios } from '@/modules/beneficios/queries'
 import { PagoPortalButton } from '@/modules/portal/components/PagoPortalButton'
+import { CredencialAcceso } from '@/modules/portal/components/CredencialAcceso'
+import { SemaforoBadge, semaforoCuenta, semaforoFamilia } from '@/modules/portal/components/semaforo'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/empty-state'
 
 export const dynamic = 'force-dynamic'
@@ -19,12 +31,6 @@ const KIND_LABEL: Record<string, string> = {
   cena: 'Cena',
   asamblea: 'Asamblea',
   buffet: 'Turno de buffet',
-}
-
-const CARGO_LABEL: Record<string, string> = {
-  pendiente: 'Pendiente',
-  parcial: 'Parcial',
-  vencido: 'Vencido',
 }
 
 function formatearFecha(fecha: Date, timezone: string): string {
@@ -39,9 +45,8 @@ function formatearFecha(fecha: Date, timezone: string): string {
 }
 
 function CuentaCard({ slug, cuenta }: { slug: string; cuenta: CuentaPortal }) {
-  const alDia = cuenta.balanceCents <= 0
+  const estado = semaforoCuenta(cuenta)
   const vencidos = cuenta.cargos.filter((c) => c.status === 'vencido')
-  const porVencer = cuenta.cargos.filter((c) => c.status !== 'vencido')
 
   return (
     <section className="rounded-xl border bg-card p-5 shadow-sm">
@@ -50,13 +55,13 @@ function CuentaCard({ slug, cuenta }: { slug: string; cuenta: CuentaPortal }) {
           <p className="text-sm font-semibold tracking-tight">{cuenta.label ?? cuenta.holderNombre}</p>
           <p className="text-xs text-muted-foreground">{cuenta.holderNombre}</p>
         </div>
-        <Badge variant={alDia ? 'outline' : 'destructive'}>{alDia ? 'Al día' : 'Con deuda'}</Badge>
+        <SemaforoBadge tono={estado.tono} label={estado.label} />
       </div>
 
-      <p className={`mt-4 text-3xl font-semibold tabular-nums ${alDia ? '' : 'text-destructive'}`}>
+      <p className={`mt-4 text-3xl font-semibold tabular-nums ${estado.tono === 'verde' ? '' : 'text-destructive'}`}>
         {formatARS(cuenta.balanceCents)}
       </p>
-      <p className="text-xs text-muted-foreground">{alDia ? 'Sin deuda en la cuenta' : 'Saldo pendiente'}</p>
+      <p className="text-xs text-muted-foreground">{estado.tono === 'verde' ? 'Sin deuda en la cuenta' : 'Saldo pendiente'}</p>
 
       {cuenta.cargos.length > 0 && (
         <ul className="mt-4 divide-y text-sm">
@@ -66,7 +71,7 @@ function CuentaCard({ slug, cuenta }: { slug: string; cuenta: CuentaPortal }) {
               <span className="flex shrink-0 items-center gap-2">
                 <span className="text-muted-foreground">{formatARS(c.amountCents)}</span>
                 <Badge variant={c.status === 'vencido' ? 'destructive' : 'outline'}>
-                  {CARGO_LABEL[c.status] ?? c.status}
+                  {c.status === 'pendiente' ? 'Pendiente' : c.status === 'parcial' ? 'Parcial' : 'Vencido'}
                 </Badge>
               </span>
             </li>
@@ -86,11 +91,15 @@ function CuentaCard({ slug, cuenta }: { slug: string; cuenta: CuentaPortal }) {
       {vencidos.length > 0 && (
         <p className="mt-3 text-xs text-destructive">
           {vencidos.length} {vencidos.length === 1 ? 'cargo vencido' : 'cargos vencidos'} · el club te avisa por
-          WhatsApp. {porVencer.length === 0 && 'Podés organizar un plan de pago hablando con el club.'}
+          WhatsApp.
         </p>
       )}
     </section>
   )
+}
+
+function BeneficioIcono() {
+  return <Gift className="size-5 text-primary" />
 }
 
 export default async function PortalHomePage({ params }: { params: Promise<{ club: string }> }) {
@@ -107,22 +116,146 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
   if (!club) redirect('/')
 
   const datos = await datosPortal(ctx.clubId, ctx.personId)
-  const deudaTotal = datos.cuentas.reduce((acc, c) => acc + Math.max(0, c.balanceCents), 0)
+  const beneficios = await listarBeneficios(ctx.clubId)
+  const estadoCta = semaforoFamilia(datos.cuentas)
+  const primary = club.branding?.primary ?? '#111827'
+  const p = datos.persona
+  const iniciales = `${p.firstName.charAt(0)}${p.lastName.charAt(0)}`.toUpperCase()
+  const documento = `${p.docType} ${p.docNumber ?? '—'}`
+  const vencimientoDia = club.financeConfig?.vencimientoDia ?? 10
 
   return (
     <div className="grid gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Hola, {datos.persona.firstName || 'socio'}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {datos.cuentas.length === 0
-            ? 'Tu cuenta todavía no tiene movimientos.'
-            : deudaTotal > 0
-              ? `Tenés ${formatARS(deudaTotal)} pendientes en total.`
-              : 'Estás al día con el club.'}
+      {/* Encabezado de perfil grande */}
+      <section
+        className="overflow-hidden rounded-2xl p-5 text-primary-foreground shadow-md sm:p-6"
+        style={{
+          background: `linear-gradient(135deg, ${primary} 0%, color-mix(in oklab, ${primary} 60%, #000) 100%)`,
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/15 text-3xl font-bold ring-1 ring-white/30">
+            {p.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.photoUrl} alt="" className="size-full object-cover" />
+            ) : (
+              iniciales
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-2xl font-semibold tracking-tight">
+              {p.firstName} {p.lastName}
+            </p>
+            <p className="mt-0.5 text-sm text-primary-foreground/85">{documento}</p>
+            {datos.categorias.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {datos.categorias.slice(0, 3).map((c) => (
+                  <span
+                    key={c.teamId}
+                    className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium ring-1 ring-white/25"
+                  >
+                    {c.label}
+                    {c.sport ? ` · ${c.sport}` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <SemaforoBadge
+            tono={estadoCta.tono}
+            label={estadoCta.label}
+            sobreFondoColor
+            className="bg-white/15 text-white ring-1 ring-white/25"
+          />
+        </div>
+      </section>
+
+      {/* Estado de cuota: semáforo + débito automático (visual) */}
+      <section className="rounded-xl border bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            {estadoCta.tono === 'verde' ? (
+              <CheckCircle2 className="size-5 text-green-600" />
+            ) : (
+              <CreditCard className="size-5 text-primary" />
+            )}
+            <p className="text-sm font-semibold tracking-tight">Cuota</p>
+          </div>
+          <SemaforoBadge tono={estadoCta.tono} label={estadoCta.label} />
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {estadoCta.tono === 'verde'
+            ? 'Estás al día — no tenés cuotas pendientes.'
+            : estadoCta.tono === 'amarillo'
+              ? 'Tenés cuotas por vencer. Pagá antes del día ' + vencimientoDia + ' de cada mes.'
+              : 'Tenés cuotas vencidas. El club te va a avisar por WhatsApp.'}
         </p>
-      </div>
+
+        {datos.cuotaPlan && (
+          <div className="mt-4 grid gap-4 rounded-xl border border-dashed p-4 sm:grid-cols-[1fr_auto]">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+                <CreditCard className="size-4 text-primary" />
+                Débito automático
+                <span className="rounded-full bg-green-600/15 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                  Activo
+                </span>
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Tu cuota ({datos.cuotaPlan.planNombre}) se cobra sola cada mes{' '}
+                <span className="font-semibold tabular-nums text-foreground">
+                  {formatARS(datos.cuotaPlan.montoCents)}
+                </span>
+                {' '}siempre que estés al día.
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Gestión visual por ahora — la activación real llega próximamente.
+              </p>
+            </div>
+            <div className="flex items-center">
+              <Button variant="outline" disabled>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Credencial digital con QR prominente */}
+      <CredencialAcceso
+        clubSlug={slug}
+        nombre={`${p.firstName} ${p.lastName}`.trim()}
+        documento={documento}
+        miembro={
+          datos.categorias.length > 0
+            ? datos.categorias.map((c) => c.label).join(' · ')
+            : 'Socio del club'
+        }
+      />
+
+      {beneficios.length > 0 && (
+        <section className="grid gap-3">
+          <div className="flex items-center gap-2">
+            <Gift className="size-4 text-primary" />
+            <p className="text-sm font-semibold tracking-tight">Beneficios para socios</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {beneficios.map((b) => (
+              <div key={b.id} className="rounded-xl border bg-card p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                    <BeneficioIcono />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold tracking-tight">{b.title}</p>
+                    {b.description && <p className="mt-1 text-xs text-muted-foreground">{b.description}</p>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {datos.proximoEvento ? (
         <section className="rounded-xl border bg-card p-5 shadow-sm">
@@ -169,7 +302,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
             <CuentaCard key={c.accountId} slug={slug} cuenta={c} />
           ))}
           <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <CreditCard className="size-3.5" />
+            <Wallet className="size-3.5" />
             ¿Querés ver todo el detalle?
             <Link href={`/${slug}/portal/pagos`} className="font-medium text-primary underline-offset-4 hover:underline">
               Andá a Pagos
@@ -178,7 +311,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
         </div>
       ) : (
         <section className="rounded-xl border border-dashed bg-card/50 p-6 text-center">
-          <TrendingDown className="mx-auto size-8 text-muted-foreground" />
+          <Wallet className="mx-auto size-8 text-muted-foreground" />
           <p className="mt-2 text-sm text-muted-foreground">
             Todavía no tenés ninguna cuenta asociada. Hablá con el club si creés que es un error.
           </p>

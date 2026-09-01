@@ -6,6 +6,7 @@ import {
   Bell,
   CalendarDays,
   FileText,
+  Gift,
   HandCoins,
   LayoutDashboard,
   AlertTriangle,
@@ -30,6 +31,7 @@ export type NavIcon =
   | 'documentos'
   | 'importador'
   | 'exportar'
+  | 'beneficios'
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -43,6 +45,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   documentos: FileText,
   importador: Upload,
   exportar: Download,
+  beneficios: Gift,
 }
 
 export type NavItem = {

@@ -7,6 +7,7 @@ import { rolesEnClub } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import { datosPortal, ultimosMovimientosPortal } from '@/modules/portal/queries'
 import { PagoPortalButton } from '@/modules/portal/components/PagoPortalButton'
+import { SemaforoBadge, semaforoCuenta } from '@/modules/portal/components/semaforo'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/empty-state'
 
@@ -50,7 +51,7 @@ export default async function PortalPagosPage({ params }: { params: Promise<{ cl
         />
       ) : (
         datos.cuentas.map((cuenta) => {
-          const alDia = cuenta.balanceCents <= 0
+          const estado = semaforoCuenta(cuenta)
           return (
             <section key={cuenta.accountId} className="rounded-xl border bg-card p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -60,9 +61,7 @@ export default async function PortalPagosPage({ params }: { params: Promise<{ cl
                   </p>
                   <p className="text-xs text-muted-foreground">{cuenta.holderNombre}</p>
                 </div>
-                <Badge variant={alDia ? 'outline' : 'destructive'}>
-                  {alDia ? 'Al día' : formatARS(cuenta.balanceCents) + ' pendientes'}
-                </Badge>
+                <SemaforoBadge tono={estado.tono} label={estado.label} />
               </div>
 
               {cuenta.cargos.length > 0 ? (
