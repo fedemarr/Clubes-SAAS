@@ -13,6 +13,7 @@ import {
   Upload,
   Users,
   Wallet,
+  Download,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -28,6 +29,7 @@ export type NavIcon =
   | 'notificaciones'
   | 'documentos'
   | 'importador'
+  | 'exportar'
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -40,6 +42,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   notificaciones: Bell,
   documentos: FileText,
   importador: Upload,
+  exportar: Download,
 }
 
 export type NavItem = {

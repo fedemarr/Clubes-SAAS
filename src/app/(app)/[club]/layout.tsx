@@ -127,9 +127,11 @@ export default async function ClubLayout({
   const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)
   const puedeMorosidad = await checkPermission('morosidad.ver', { kind: 'club' }, slug)
   const puedeImportador = (await checkPermission('importador.usar', { kind: 'club' }, slug)) ?? sa
+  const puedeExportar = (await checkPermission('cuotas.ver', { kind: 'club' }, slug)) ?? sa ?? (await checkPermission('personas.ver', { kind: 'club' }, slug))
   let nav: NavItem[] = NAV
   if (puedeCobranzas) nav = [...nav, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: 'cobranzas' }]
   if (puedeMorosidad) nav = [...nav, { href: '/cuotas/morosidad', label: 'Morosidad', icon: 'morosidad' }]
+  if (puedeExportar) nav = [...nav, { href: '/admin/exportar', label: 'Exportar', icon: 'exportar' }]
   if (puedeImportador) nav = [...nav, { href: '/admin/importador', label: 'Importador', icon: 'importador' }]
 
   const primary = club.branding?.primary ?? '#111827'
