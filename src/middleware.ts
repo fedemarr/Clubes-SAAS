@@ -16,6 +16,7 @@ const RESERVED_FIRST_SEGMENT = new Set([
   'manifest.webmanifest',
   'icons',
   'offline',
+  'super-admin',
 ])
 
 /**

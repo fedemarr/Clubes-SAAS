@@ -21,6 +21,7 @@
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
     "db:seed:m5": "tsx --env-file=.env.local src/db/seed-morosidad.ts",
     "db:seed:m7": "tsx --env-file=.env.local src/db/seed-documentos.ts",
+    "db:seed:super-admin": "tsx --env-file=.env.local src/db/seed-super-admin.ts",
     "test": "vitest run"
   },
   "dependencies": {

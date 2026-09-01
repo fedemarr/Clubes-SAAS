@@ -401,3 +401,35 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS rejection_reason varchar(255);
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS alerted_days integer[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS documents_club_status_idx ON documents (club_id, status);
 CREATE INDEX IF NOT EXISTS documents_club_uploaded_idx ON documents (club_id, uploaded_by);
+
+-- 14. Super Admin (M9). Tablas globales del andamiaje de administración de
+--     la plataforma: NO llevan club_id y NO tienen RLS (como clubs y users),
+--     porque el super admin opera sobre todos los tenants. El guard de
+--     acceso vive en la app (esSuperAdmin): una consulta una fila a
+--     super_admin_users por email del usuario autenticado. super_admin_log
+--     es la auditoría de cada acción administrativa (quién, qué, cuándo).
+--
+--     Acceso: solo los emails en super_admin_users. El bootstrap inicial
+--     (fede@fmcode.com) se inserta en el script db:seed:super-admin.
+CREATE TABLE IF NOT EXISTS super_admin_users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email varchar(255) NOT NULL UNIQUE,
+  notes varchar(255),
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, DELETE ON super_admin_users TO app_user;
+
+CREATE TABLE IF NOT EXISTS super_admin_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_email varchar(255) NOT NULL,
+  action varchar(40) NOT NULL,
+  entity varchar(40) NOT NULL,
+  entity_id uuid,
+  diff jsonb,
+  ip varchar(45),
+  at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT ON super_admin_log TO app_user;
+CREATE INDEX IF NOT EXISTS super_admin_log_entity_idx ON super_admin_log (entity, entity_id);
+CREATE INDEX IF NOT EXISTS super_admin_log_at_idx ON super_admin_log (at DESC);
