@@ -433,3 +433,51 @@ CREATE TABLE IF NOT EXISTS super_admin_log (
 GRANT SELECT, INSERT ON super_admin_log TO app_user;
 CREATE INDEX IF NOT EXISTS super_admin_log_entity_idx ON super_admin_log (entity, entity_id);
 CREATE INDEX IF NOT EXISTS super_admin_log_at_idx ON super_admin_log (at DESC);
+
+-- 15. Importador (M10). El wizard parsea el archivo en el cliente (xlsx) y
+--     el server valida y persiste cada corrida agrupada en un batch: el
+--     batch_id viaja a audit_log con withTenant (4º arg, ver sección 6) y
+--     además se inserta una fila en import_batches para la historia
+--     ("importaste N personas el ..."). import_mappings recuerda, por club y
+--     tipo de importación, qué columna del archivo mapea a cada campo, para
+--     que la próxima vez el wizard arranque pre-mapeado. Ninguna es entidad
+--     de negocio: son andamiaje del importador, viven acá (patrón M5).
+CREATE TABLE IF NOT EXISTS import_batches (
+  id uuid PRIMARY KEY,
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  import_type varchar(30) NOT NULL,
+  file_name varchar(255) NOT NULL,
+  total_rows integer NOT NULL DEFAULT 0,
+  imported_rows integer NOT NULL DEFAULT 0,
+  skipped_rows integer NOT NULL DEFAULT 0,
+  error_rows integer NOT NULL DEFAULT 0,
+  mapping jsonb,
+  imported_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON import_batches TO app_user;
+ALTER TABLE import_batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_batches FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON import_batches;
+CREATE POLICY tenant_isolation ON import_batches
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE INDEX IF NOT EXISTS import_batches_club_created_idx ON import_batches (club_id, created_at);
+
+CREATE TABLE IF NOT EXISTS import_mappings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid NOT NULL REFERENCES clubs(id),
+  import_type varchar(30) NOT NULL,
+  mapping jsonb NOT NULL DEFAULT '{}'::jsonb,
+  has_header boolean NOT NULL DEFAULT true,
+  updated_by uuid REFERENCES users(id),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON import_mappings TO app_user;
+ALTER TABLE import_mappings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_mappings FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON import_mappings;
+CREATE POLICY tenant_isolation ON import_mappings
+  USING (club_id = current_club())
+  WITH CHECK (club_id = current_club());
+CREATE UNIQUE INDEX IF NOT EXISTS import_mappings_club_type_uq ON import_mappings (club_id, import_type);

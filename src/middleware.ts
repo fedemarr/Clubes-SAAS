@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, or } from 'drizzle-orm'
+import { and, eq, gte, isNull, or, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { clubs, personRoles, persons } from '@/db/schema'
@@ -45,28 +45,41 @@ export default auth(async function middleware(req) {
 
   const userId = req.auth?.user?.id
   if (userId) {
-    // persons/person_roles tienen RLS forzado: la query tiene que ir dentro
-    // de withTenant() (set_config), si no siempre devuelve cero filas.
-    const activePerson = await withTenant(club.id, async ({ tx }) => {
-      const today = new Date().toISOString().slice(0, 10)
-      const [row] = await tx
-        .select({ id: persons.id })
-        .from(persons)
-        .innerJoin(personRoles, eq(personRoles.personId, persons.id))
-        .where(
-          and(
-            eq(persons.clubId, club.id),
-            eq(persons.userId, userId),
-            isNull(persons.deletedAt),
-            or(isNull(personRoles.validTo), gte(personRoles.validTo, today)),
-          ),
-        )
-        .limit(1)
-      return row
-    })
+    // El super admin (M9) no tiene persona en el club donde opera como
+    // staff (M10) — saltea la validación de rol vigente.
+    let esSuperAdmin = false
+    const email = req.auth?.user?.email
+    if (email) {
+      const saRows = await db.execute<{ id: string }>(sql`
+        SELECT id FROM super_admin_users WHERE email = ${email}
+      `)
+      esSuperAdmin = saRows.rows.length > 0
+    }
 
-    if (!activePerson) {
-      return new NextResponse(null, { status: 404 })
+    if (!esSuperAdmin) {
+      // persons/person_roles tienen RLS forzado: la query tiene que ir dentro
+      // de withTenant() (set_config), si no siempre devuelve cero filas.
+      const activePerson = await withTenant(club.id, async ({ tx }) => {
+        const today = new Date().toISOString().slice(0, 10)
+        const [row] = await tx
+          .select({ id: persons.id })
+          .from(persons)
+          .innerJoin(personRoles, eq(personRoles.personId, persons.id))
+          .where(
+            and(
+              eq(persons.clubId, club.id),
+              eq(persons.userId, userId),
+              isNull(persons.deletedAt),
+              or(isNull(personRoles.validTo), gte(personRoles.validTo, today)),
+            ),
+          )
+          .limit(1)
+        return row
+      })
+
+      if (!activePerson) {
+        return new NextResponse(null, { status: 404 })
+      }
     }
   }
 

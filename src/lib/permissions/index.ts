@@ -33,6 +33,7 @@ export type Permission =
   | 'documentos.ver'
   | 'documentos.gestionar'
   | 'documentos.tipos'
+  | 'importador.usar'
 
 export type Scope = { kind: 'club' } | { kind: 'team'; teamId: string }
 
@@ -47,7 +48,7 @@ export const STAFF_ROLES: ReadonlySet<RoleKind> = new Set<RoleKind>([
 ])
 
 const ROLE_PERMISSIONS: Partial<Record<RoleKind, Permission[]>> = {
-  presidente: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'morosidad.ver', 'documentos.ver', 'documentos.gestionar', 'documentos.tipos'],
+  presidente: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'morosidad.ver', 'documentos.ver', 'documentos.gestionar', 'documentos.tipos', 'importador.usar'],
   secretaria: ['notificaciones.ver', 'personas.ver', 'personas.editar', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'cuotas.ver', 'documentos.ver', 'documentos.gestionar', 'documentos.tipos'],
   tesorero: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'calendario.ver', 'cuotas.ver', 'cuotas.emitir', 'cobranzas.ver', 'cobranzas.registrar', 'cobranzas.conciliar', 'morosidad.ver', 'morosidad.configurar'],
   coordinador: ['notificaciones.ver', 'personas.ver', 'categorias.ver', 'categorias.editar', 'calendario.ver', 'calendario.editar', 'convocatoria.ver', 'convocatoria.publicar', 'asistencia.ver', 'asistencia.tomar', 'documentos.ver'], // scope: su team

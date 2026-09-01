@@ -7,6 +7,7 @@ import { clubs } from '@/db/schema'
 import { auth } from '@/lib/auth/config'
 import { checkPermission } from '@/lib/permissions'
 import { rolesEnClub, STAFF_ROLES } from '@/lib/permissions'
+import { esSuperAdmin } from '@/lib/super-admin'
 import { brandTokens } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { AppNav, type NavItem } from '@/components/app-nav'
@@ -100,9 +101,12 @@ export default async function ClubLayout({
   }
 
   const ctx = await rolesEnClub(slug)
-  if (!ctx) notFound()
+  // El super admin (M9) no tiene persona en el club pero opera como staff
+  // sobre cualquier tenant (M10): entra al shell del backoffice igual.
+  const sa = ctx ? null : await esSuperAdmin()
+  if (!ctx && !sa) notFound()
 
-  const esStaff = ctx.roles.some((r) => STAFF_ROLES.has(r))
+  const esStaff = ctx ? ctx.roles.some((r) => STAFF_ROLES.has(r)) : true
   if (!esStaff) {
     // Shell del portal para socios/tutores (M6).
     return (
@@ -122,9 +126,11 @@ export default async function ClubLayout({
 
   const puedeCobranzas = await checkPermission('cobranzas.ver', { kind: 'club' }, slug)
   const puedeMorosidad = await checkPermission('morosidad.ver', { kind: 'club' }, slug)
+  const puedeImportador = (await checkPermission('importador.usar', { kind: 'club' }, slug)) ?? sa
   let nav: NavItem[] = NAV
   if (puedeCobranzas) nav = [...nav, { href: '/cuotas/cobranzas', label: 'Cobranzas', icon: 'cobranzas' }]
   if (puedeMorosidad) nav = [...nav, { href: '/cuotas/morosidad', label: 'Morosidad', icon: 'morosidad' }]
+  if (puedeImportador) nav = [...nav, { href: '/admin/importador', label: 'Importador', icon: 'importador' }]
 
   const primary = club.branding?.primary ?? '#111827'
   const brandStyle = brandTokens(primary)

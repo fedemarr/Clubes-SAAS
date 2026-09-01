@@ -1,10 +1,11 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Upload } from 'lucide-react'
 import { formatARS } from '@/lib/money'
 import { esSuperAdmin } from '@/lib/super-admin'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
 import {
   obtenerClubParaEdicion,
@@ -49,6 +50,10 @@ export default async function SuperAdminClubPage({ params }: { params: Promise<{
         description={`/${club.slug} · ${club.locality ?? 'Sin localidad'} · ${club.timezone}`}
         actions={
           <div className="flex items-center gap-2">
+            <Button render={<Link href={`/${club.slug}/admin/importador`} />} variant="outline" size="sm">
+              <Upload data-icon="inline-start" />
+              Importar datos
+            </Button>
             {club.logoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={club.logoUrl} alt="" width={36} height={36} className="rounded-full ring-1 ring-foreground/10" />

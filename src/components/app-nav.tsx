@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   AlertTriangle,
   Trophy,
+  Upload,
   Users,
   Wallet,
   type LucideIcon,
@@ -26,6 +27,7 @@ export type NavIcon =
   | 'morosidad'
   | 'notificaciones'
   | 'documentos'
+  | 'importador'
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -37,6 +39,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   morosidad: AlertTriangle,
   notificaciones: Bell,
   documentos: FileText,
+  importador: Upload,
 }
 
 export type NavItem = {
