@@ -1,6 +1,7 @@
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { listarAuditoriaSuperAdmin } from '@/modules/super-admin/queries'
+import { DescargarAuditoriaCsvButton } from '@/modules/super-admin/components/descargar-auditoria-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,10 +10,13 @@ export default async function SuperAdminAuditoriaPage() {
 
   return (
     <main>
-      <PageHeader
-        title="Auditoría de super admin"
-        description="Todas las acciones administrativas de la plataforma."
-      />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader
+          title="Auditoría de super admin"
+          description="Todas las acciones administrativas de la plataforma."
+        />
+        <DescargarAuditoriaCsvButton />
+      </div>
 
       <div className="mt-6 overflow-hidden rounded-xl border bg-card">
         <table className="w-full text-sm">

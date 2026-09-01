@@ -7,6 +7,8 @@ import { headers } from 'next/headers'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { requireSuperAdmin, registrarAccionSuperAdmin } from '@/lib/super-admin'
+import { crearCsv } from '@/lib/csv'
+import { exportarAuditoriaSuperAdmin } from './queries'
 
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -179,4 +181,35 @@ export async function setearSuspensionClub(
   revalidatePath('/super-admin')
   revalidatePath(`/super-admin/clubs/${slug}`)
   return { ok: true, data: null }
+}
+
+/** Exporta toda la auditoría de super admin en CSV (solo SA). */
+export async function exportarAuditoriaCsv(): Promise<ActionResult<string>> {
+  const sa = await requireSuperAdmin()
+
+  const registros = await exportarAuditoriaSuperAdmin()
+  const filas: (string | number | null)[][] = [
+    ['fecha_utc', 'actor', 'accion', 'entidad', 'entidad_id', 'club', 'detalle', 'ip'],
+    ...registros.map((r) => [
+      r.at.toISOString(),
+      r.actorEmail,
+      r.action,
+      r.entity,
+      r.entityId ?? '',
+      r.clubSlug ?? '',
+      JSON.stringify(r.diff ?? {}),
+      r.ip ?? '',
+    ]),
+  ]
+
+  await registrarAccionSuperAdmin(
+    sa.email,
+    'export',
+    'super_admin_log',
+    null,
+    { rows: registros.length },
+    await ipDeRequest(),
+  )
+
+  return { ok: true, data: crearCsv(filas) }
 }

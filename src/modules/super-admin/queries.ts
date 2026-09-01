@@ -145,6 +145,40 @@ export async function listarAuditoriaSuperAdmin(filtro: FiltroAuditoria = {}): P
   }))
 }
 
+export type RegistroAuditoriaExport = RegistroAuditoria & { clubSlug: string | null }
+
+/** Toda la auditoría de super admin, sin límite, enriquecida con el slug del club. */
+export async function exportarAuditoriaSuperAdmin(): Promise<RegistroAuditoriaExport[]> {
+  const rows = await db.execute<{
+    id: string
+    actor_email: string
+    action: string
+    entity: string
+    entity_id: string | null
+    diff: Record<string, unknown> | null
+    ip: string | null
+    at: Date
+    club_slug: string | null
+  }>(sql`
+    SELECT sal.id, sal.actor_email, sal.action, sal.entity, sal.entity_id, sal.diff, sal.ip, sal.at,
+           c.slug AS club_slug
+    FROM super_admin_log sal
+    LEFT JOIN clubs c ON c.id = sal.entity_id
+    ORDER BY sal.at DESC
+  `)
+  return rows.rows.map((r) => ({
+    id: r.id,
+    actorEmail: r.actor_email,
+    action: r.action,
+    entity: r.entity,
+    entityId: r.entity_id,
+    diff: r.diff as Record<string, unknown> | null,
+    ip: r.ip,
+    at: new Date(r.at),
+    clubSlug: r.club_slug,
+  }))
+}
+
 /** Auditoría estructural de un club (audit_log, tenant-scoped) para drill-down. */
 export async function auditoriaDelClub(clubId: string, limit = 100) {
   return withTenant(clubId, async ({ tx }) => {
