@@ -7,25 +7,39 @@ import { cn } from '@/lib/utils'
 import { confirmarFoto, iniciarSubidaFoto, quitarFoto } from '../actions'
 
 const MAX_SIZE = 5 * 1024 * 1024
-const TIPOS_OK = new Set(['image/jpeg', 'image/png', 'image/webp'])
+// Tope del archivo ORIGINAL (antes de re-encodar): una foto de celular sin
+// comprimir, sobre todo HEIC de iPhone, pesa bastante más que el resultado
+// final en JPEG — no se puede validar contra MAX_SIZE en este punto.
+const MAX_SIZE_ORIGINAL = 25 * 1024 * 1024
 
-/** Redibuja el bitmap en un canvas para sacar EXIF (ubicación/dispositivo), mismo criterio que documentos (M15). PNG/WEBP no llevan EXIF relevante pero de paso se re-encodan igual. */
-async function limpiarImagen(file: File): Promise<File> {
+/**
+ * Redibuja el bitmap en un canvas para sacar EXIF (ubicación/dispositivo,
+ * mismo criterio que documentos en M15) y de paso normaliza CUALQUIER
+ * formato que el navegador sepa decodificar a JPG/PNG — en particular HEIC
+ * de iPhone, que Safari entrega tal cual desde la cámara/Fotos y que el
+ * input de archivo no siempre convierte solo. Antes se validaba el tipo del
+ * archivo ORIGINAL contra una lista fija (jpg/png/webp) y esto rechazaba
+ * un HEIC antes de intentar convertirlo — por eso "no dejaba subir la
+ * foto" en iPhone. Ahora se intenta decodificar cualquier cosa y se valida
+ * recién el resultado. Devuelve null si el navegador no pudo decodificarlo.
+ */
+async function limpiarImagen(file: File): Promise<File | null> {
   try {
     const bitmap = await createImageBitmap(file)
     const canvas = document.createElement('canvas')
     canvas.width = bitmap.width
     canvas.height = bitmap.height
     const ctx = canvas.getContext('2d')
-    if (!ctx) return file
+    if (!ctx) return null
     ctx.drawImage(bitmap, 0, 0)
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.9),
     )
-    if (!blob) return file
-    return new File([blob], file.name, { type: blob.type, lastModified: file.lastModified })
+    if (!blob) return null
+    const nombre = file.name.replace(/\.(heic|heif)$/i, blob.type === 'image/png' ? '.png' : '.jpg')
+    return new File([blob], nombre, { type: blob.type, lastModified: file.lastModified })
   } catch {
-    return file
+    return null
   }
 }
 
@@ -58,11 +72,18 @@ export function AvatarFoto({
     e.target.value = ''
     if (!f) return
     setError(null)
-    if (!TIPOS_OK.has(f.type)) return setError('Tiene que ser JPG, PNG o WEBP.')
-    if (f.size > MAX_SIZE) return setError('La foto no puede superar 5 MB.')
+    if (f.size > MAX_SIZE_ORIGINAL) return setError('La foto es demasiado pesada.')
 
     setSubiendo(true)
     const limpia = await limpiarImagen(f)
+    if (!limpia) {
+      setSubiendo(false)
+      return setError('No se pudo procesar esa imagen. Probá con otra foto.')
+    }
+    if (limpia.size > MAX_SIZE) {
+      setSubiendo(false)
+      return setError('La foto no puede superar 5 MB.')
+    }
     const r = await iniciarSubidaFoto(clubSlug, { mimeType: limpia.type, fileSize: limpia.size })
     if (!r.ok) {
       setSubiendo(false)
@@ -129,7 +150,12 @@ export function AvatarFoto({
           </button>
         )}
 
-        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => void onFile(e)} />
+        {/* accept="image/*" (no una lista fija): el picker del celular no
+            tiene que filtrar según lo que el servidor guarda — cualquier
+            foto que el navegador pueda decodificar se normaliza en
+            limpiarImagen(). Una lista fija acá es lo que escondía HEIC
+            en algunos selectores de iPhone. */}
+        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onFile(e)} />
       </div>
       {error && <p className="max-w-32 text-[11px] text-destructive">{error}</p>}
     </div>

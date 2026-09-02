@@ -91,7 +91,7 @@ export default async function Home() {
               >
                 {club.logoUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={club.logoUrl} alt="" width={40} height={40} className="rounded-full ring-1 ring-foreground/10" />
+                  <img src={club.logoUrl} alt="" width={38} height={50} className="object-contain" />
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold tracking-tight">{club.name}</p>

@@ -52,7 +52,7 @@ function PortalShell({ slug, clubName, logoUrl, timezone, children }: {
           <div className="flex min-w-0 items-center gap-2.5">
             {logoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="" width={26} height={26} className="shrink-0 rounded-full ring-1 ring-foreground/10" />
+              <img src={logoUrl} alt="" width={24} height={32} className="shrink-0 object-contain" />
             )}
             <Link href={`/${slug}/portal`} className="truncate text-sm font-semibold tracking-tight">
               {clubName}
@@ -176,7 +176,7 @@ export default async function ClubLayout({
         <div className="flex h-14 shrink-0 items-center gap-2.5 border-b px-4">
           {club.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={club.logoUrl} alt="" width={28} height={28} className="rounded-full ring-1 ring-foreground/10" />
+            <img src={club.logoUrl} alt="" width={26} height={34} className="object-contain" />
           )}
           <Link href={`/${slug}/dashboard`} className="truncate text-sm font-semibold tracking-tight">
             {club.name}
@@ -204,7 +204,7 @@ export default async function ClubLayout({
       <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/90 px-4 backdrop-blur lg:hidden">
         {club.logoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={club.logoUrl} alt="" width={26} height={26} className="rounded-full ring-1 ring-foreground/10" />
+          <img src={club.logoUrl} alt="" width={24} height={32} className="object-contain" />
         )}
         <Link href={`/${slug}/dashboard`} className={cn('text-sm font-semibold tracking-tight')}>
           {club.name}
