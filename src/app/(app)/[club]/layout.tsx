@@ -1,7 +1,6 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { Bell, FileText, Home, IdCard, Wallet } from 'lucide-react'
 import { db } from '@/db/client'
 import { clubs } from '@/db/schema'
 import { withTenant } from '@/db/tenant'
@@ -13,6 +12,7 @@ import { identidadImpersonada } from '@/lib/impersonacion'
 import { brandTokens } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { AppNav, type NavItem } from '@/components/app-nav'
+import { PortalBottomNav, type PortalNavItem } from '@/components/portal-bottom-nav'
 import { SignOutButton } from '@/components/sign-out-button'
 import { ImpersonacionBanner } from '@/modules/super-admin/components/impersonacion-banner'
 import { MemberRedirect } from './MemberRedirect'
@@ -27,12 +27,12 @@ const NAV: NavItem[] = [
   { href: '/notificaciones', label: 'Notificaciones', icon: 'notificaciones' },
 ]
 
-const PORTAL_NAV = [
-  { href: '/portal', label: 'Inicio', icon: Home },
-  { href: '/portal/carnet', label: 'Carnet', icon: IdCard },
-  { href: '/portal/pagos', label: 'Pagos', icon: Wallet },
-  { href: '/portal/documentos', label: 'Documentos', icon: FileText },
-  { href: '/notificaciones', label: 'Notificaciones', icon: Bell },
+const PORTAL_NAV: PortalNavItem[] = [
+  { href: '/portal', label: 'Inicio', icon: 'inicio' },
+  { href: '/portal/carnet', label: 'Carnet', icon: 'carnet' },
+  { href: '/portal/pagos', label: 'Pagos', icon: 'pagos' },
+  { href: '/portal/documentos', label: 'Documentos', icon: 'documentos' },
+  { href: '/notificaciones', label: 'Notificaciones', icon: 'notificaciones' },
 ]
 
 function PortalShell({ slug, clubName, logoUrl, timezone, children }: {
@@ -44,36 +44,26 @@ function PortalShell({ slug, clubName, logoUrl, timezone, children }: {
 }) {
   return (
     <div className="min-h-dvh bg-background">
+      {/* La nav vive abajo (PortalBottomNav): acá solo identidad del club,
+          para que no haya una fila de 5 ítems de texto desbordando en
+          anchos intermedios. */}
       <header className="sticky top-0 z-30 border-b bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 items-center gap-2.5">
             {logoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="" width={26} height={26} className="rounded-full ring-1 ring-foreground/10" />
+              <img src={logoUrl} alt="" width={26} height={26} className="shrink-0 rounded-full ring-1 ring-foreground/10" />
             )}
             <Link href={`/${slug}/portal`} className="truncate text-sm font-semibold tracking-tight">
               {clubName}
             </Link>
-            <span className="hidden text-[11px] text-muted-foreground sm:inline">{timezone}</span>
+            <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{timezone}</span>
           </div>
           <SignOutButton />
         </div>
-        <div className="mx-auto max-w-3xl overflow-x-auto px-3">
-          <div className="flex items-center gap-1 py-1.5">
-            {PORTAL_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={`/${slug}${item.href}`}
-                className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <item.icon className="size-4" />
-                <span>{item.label}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
       </header>
-      <main className="mx-auto max-w-3xl px-4 py-6 lg:py-8">{children}</main>
+      <main className="mx-auto max-w-3xl px-4 py-6 pb-24 lg:py-8 lg:pb-24">{children}</main>
+      <PortalBottomNav clubSlug={slug} items={PORTAL_NAV} />
     </div>
   )
 }
