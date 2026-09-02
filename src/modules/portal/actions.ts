@@ -6,7 +6,7 @@ import { withTenant } from '@/db/tenant'
 import { accounts, memberships } from '@/db/schema'
 import { requirePermission } from '@/lib/permissions'
 import { crearPreferenciaPago } from '@/modules/cobranzas/mercadopago'
-import { firmarUrlSubida, borrarObjeto, generarFotoKey } from '@/lib/storage/r2'
+import { firmarUrlSubida, borrarObjeto, generarFotoKey, r2Configurado } from '@/lib/storage/r2'
 import { documentoIdSchema, subirDocumentoSchema } from '@/modules/documentos/schemas'
 import { insertarDocumentoTx } from '@/modules/documentos/service'
 import { personasDelMiembroTx } from './queries'
@@ -175,6 +175,14 @@ export async function iniciarSubidaFoto(
 ): Promise<ActionResult<{ key: string; uploadUrl: string | null }>> {
   const parsed = fotoSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  // Sin R2 configurado, firmarUrlSubida devuelve null y el flujo "completa"
+  // sin guardar nada de verdad — antes eso quedaba mudo (la foto volvía a
+  // mostrar las iniciales al refrescar, sin ningún error visible: el bug
+  // que reportó el usuario como "no me deja subir la foto"). Ahora se corta
+  // acá con un mensaje explícito en vez de fingir que anduvo.
+  if (!r2Configurado()) {
+    return { ok: false, error: 'La subida de fotos todavía no está habilitada en este club. Avisale al admin.' }
+  }
 
   try {
     const ctx = await requirePermission('notificaciones.ver', { kind: 'club' }, clubSlug)
