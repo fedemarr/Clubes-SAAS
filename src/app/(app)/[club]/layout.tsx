@@ -126,9 +126,18 @@ export default async function ClubLayout({
     // custom properties de shadcn, sin tocar cada página a mano.
     const portalBranding = club.branding as { primary?: string; portalTheme?: string } | null
     const portalOscuro = portalBranding?.portalTheme === 'dark'
+    // El --muted-foreground de globals.css (oklch(0.708 0 0), pensado para el
+    // .dark "de fábrica" con --card bien separado del fondo) queda demasiado
+    // apagado acá: --card y --background del portal oscuro son casi el mismo
+    // negro, así que todo el texto secundario (subtítulos, hints, estados
+    // vacíos) se lee gris oscuro sobre gris oscuro. Se sube bastante la
+    // claridad SOLO en esta rama (nunca toca el staff en modo claro).
+    const estilo = portalOscuro
+      ? { ...brandTokens(portalBranding?.primary ?? '#111827'), '--muted-foreground': 'rgba(255,255,255,0.78)' }
+      : brandTokens(portalBranding?.primary ?? '#111827')
     return (
       <div
-        style={brandTokens(portalBranding?.primary ?? '#111827')}
+        style={estilo as React.CSSProperties}
         className={cn('min-h-dvh bg-background', portalOscuro && 'dark')}
       >
         {bannerImpersonacion}
