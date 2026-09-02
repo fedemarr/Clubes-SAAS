@@ -44,7 +44,7 @@ export default async function PortalDocumentosPage({ params }: { params: Promise
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight dark:text-white">
           <FileText className="size-6 text-primary" />
           Documentos
         </h1>
@@ -66,7 +66,7 @@ export default async function PortalDocumentosPage({ params }: { params: Promise
           return (
             <section key={s.id}>
               <div className="flex items-baseline gap-2">
-                <h2 className="text-sm font-semibold tracking-tight">{s.titulo}</h2>
+                <h2 className="text-sm font-semibold tracking-tight dark:text-white">{s.titulo}</h2>
                 <span className="text-xs text-muted-foreground">
                   {items.length} · {s.hint}
                 </span>

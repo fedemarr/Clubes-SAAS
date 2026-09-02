@@ -46,7 +46,7 @@ export default async function CarnetPage({ params }: { params: Promise<{ club: s
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight dark:text-white">
           <IdCard className="size-6 text-primary" />
           Carnet digital
         </h1>
@@ -155,7 +155,7 @@ export default async function CarnetPage({ params }: { params: Promise<{ club: s
 
       {datos.categorias.length > 0 && (
         <section className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-sm font-semibold tracking-tight">Categorías</p>
+          <p className="text-sm font-semibold tracking-tight dark:text-white">Categorías</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {datos.categorias.map((c) => (
               <Badge key={c.teamId} variant="outline">
@@ -168,7 +168,7 @@ export default async function CarnetPage({ params }: { params: Promise<{ club: s
 
       {datos.membresias.length > 0 && (
         <section className="rounded-xl border bg-card p-5 shadow-sm">
-          <p className="text-sm font-semibold tracking-tight">Membresías</p>
+          <p className="text-sm font-semibold tracking-tight dark:text-white">Membresías</p>
           <ul className="mt-3 divide-y text-sm">
             {datos.membresias.map((m, i) => (
               <li key={i} className="flex items-center justify-between gap-3 py-2">

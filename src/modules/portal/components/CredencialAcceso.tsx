@@ -28,7 +28,7 @@ export function CredencialAcceso({
     <section className="rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold tracking-tight">Credencial digital</p>
+          <p className="text-sm font-semibold tracking-tight dark:text-white">Credencial digital</p>
           <p className="mt-0.5 text-xs text-muted-foreground">Mostrá el código para entrar al club.</p>
         </div>
         <Button variant={abierto ? 'outline' : 'default'} onClick={() => setAbierto((a) => !a)}>

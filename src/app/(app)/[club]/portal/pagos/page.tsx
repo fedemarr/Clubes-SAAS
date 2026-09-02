@@ -34,7 +34,7 @@ export default async function PortalPagosPage({ params }: { params: Promise<{ cl
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight dark:text-white">
           <Wallet className="size-6 text-primary" />
           Pagos
         </h1>
@@ -56,7 +56,7 @@ export default async function PortalPagosPage({ params }: { params: Promise<{ cl
             <section key={cuenta.accountId} className="rounded-xl border bg-card p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold tracking-tight">
+                  <p className="text-sm font-semibold tracking-tight dark:text-white">
                     {cuenta.label ?? cuenta.holderNombre}
                   </p>
                   <p className="text-xs text-muted-foreground">{cuenta.holderNombre}</p>
@@ -94,7 +94,7 @@ export default async function PortalPagosPage({ params }: { params: Promise<{ cl
       )}
 
       <section className="rounded-xl border bg-card p-5 shadow-sm">
-        <p className="text-sm font-semibold tracking-tight">Últimos movimientos</p>
+        <p className="text-sm font-semibold tracking-tight dark:text-white">Últimos movimientos</p>
         {movimientos.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">Todavía no hay movimientos.</p>
         ) : (

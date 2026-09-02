@@ -53,7 +53,7 @@ function CuentaCard({ slug, cuenta }: { slug: string; cuenta: CuentaPortal }) {
     <section className="rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold tracking-tight">{cuenta.label ?? cuenta.holderNombre}</p>
+          <p className="text-sm font-semibold tracking-tight dark:text-white">{cuenta.label ?? cuenta.holderNombre}</p>
           <p className="text-xs text-muted-foreground">{cuenta.holderNombre}</p>
         </div>
         <SemaforoBadge tono={estado.tono} label={estado.label} />
@@ -173,7 +173,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
             ) : (
               <CreditCard className="size-5 text-primary" />
             )}
-            <p className="text-sm font-semibold tracking-tight">Cuota</p>
+            <p className="text-sm font-semibold tracking-tight dark:text-white">Cuota</p>
           </div>
           <SemaforoBadge tono={estadoCta.tono} label={estadoCta.label} />
         </div>
@@ -188,7 +188,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
         {datos.cuotaPlan && (
           <div className="mt-4 grid gap-4 rounded-xl border border-dashed p-4 sm:grid-cols-[1fr_auto]">
             <div>
-              <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+              <p className="flex items-center gap-2 text-sm font-semibold tracking-tight dark:text-white">
                 <CreditCard className="size-4 text-primary" />
                 Débito automático
                 <span className="rounded-full bg-green-600/15 px-2 py-0.5 text-[11px] font-semibold text-green-700 dark:text-green-300">
@@ -231,7 +231,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
         <section className="grid gap-3">
           <div className="flex items-center gap-2">
             <Gift className="size-4 text-primary" />
-            <p className="text-sm font-semibold tracking-tight">Beneficios para socios</p>
+            <p className="text-sm font-semibold tracking-tight dark:text-white">Beneficios para socios</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {beneficios.map((b) => (
@@ -241,7 +241,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
                     <BeneficioIcono />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold tracking-tight">{b.title}</p>
+                    <p className="text-sm font-semibold tracking-tight dark:text-white">{b.title}</p>
                     {b.description && <p className="mt-1 text-xs text-muted-foreground">{b.description}</p>}
                   </div>
                 </div>
@@ -253,13 +253,13 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
 
       {datos.proximoEvento ? (
         <section className="rounded-xl border bg-card p-5 shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight dark:text-white">
             <CalendarDays className="size-4 text-primary" />
             Próximo evento
           </div>
           <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-lg font-semibold tracking-tight">
+              <p className="text-lg font-semibold tracking-tight dark:text-white">
                 {datos.proximoEvento.title ?? KIND_LABEL[datos.proximoEvento.kind] ?? 'Evento'}
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
