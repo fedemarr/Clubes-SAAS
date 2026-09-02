@@ -127,9 +127,20 @@ export default async function ClubLayout({
 
   const esStaff = ctx ? ctx.roles.some((r) => STAFF_ROLES.has(r)) : true
   if (!esStaff) {
-    // Shell del portal para socios/tutores (M6).
+    // Shell del portal para socios/tutores (M6). portalTheme no está en el
+    // tipo de schema.ts (jsonb sin validar en runtime): cast local, mismo
+    // criterio que liveUrl en /portal/carnet. Al aplicar la clase "dark" acá
+    // (tokens ya definidos en globals.css, nunca usados hasta ahora), TODO
+    // el portal —inicio, pagos, documentos, notificaciones, no solo el
+    // carnet— hereda automáticamente fondo oscuro/texto claro por los
+    // custom properties de shadcn, sin tocar cada página a mano.
+    const portalBranding = club.branding as { primary?: string; portalTheme?: string } | null
+    const portalOscuro = portalBranding?.portalTheme === 'dark'
     return (
-      <div style={brandTokens(club.branding?.primary ?? '#111827')} className="min-h-dvh bg-background">
+      <div
+        style={brandTokens(portalBranding?.primary ?? '#111827')}
+        className={cn('min-h-dvh bg-background', portalOscuro && 'dark')}
+      >
         {bannerImpersonacion}
         <MemberRedirect />
         <PortalShell
