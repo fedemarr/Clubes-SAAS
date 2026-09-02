@@ -6,7 +6,7 @@ import { withTenant } from '@/db/tenant'
 import { accounts, memberships } from '@/db/schema'
 import { requirePermission } from '@/lib/permissions'
 import { crearPreferenciaPago } from '@/modules/cobranzas/mercadopago'
-import { firmarUrlSubida, borrarObjeto } from '@/lib/storage/r2'
+import { firmarUrlSubida, borrarObjeto, generarFotoKey } from '@/lib/storage/r2'
 import { documentoIdSchema, subirDocumentoSchema } from '@/modules/documentos/schemas'
 import { insertarDocumentoTx } from '@/modules/documentos/service'
 import { personasDelMiembroTx } from './queries'
@@ -144,5 +144,98 @@ export async function borrarDocumento(clubSlug: string, input: unknown): Promise
     return { ok: true, data: null }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'No se pudo borrar el documento.' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M16 · Foto de perfil del socio (self-service, mismo patrón R2 que M7)
+// ---------------------------------------------------------------------------
+
+const fotoSchema = z.object({
+  mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+  fileSize: z.number().int().positive().max(5 * 1024 * 1024, 'La foto no puede superar 5 MB'),
+})
+
+const EXT_POR_MIME: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+}
+
+/**
+ * Arranca la subida de la foto de perfil del propio socio (nunca la de otro
+ * miembro del grupo familiar: es de la persona logueada). Devuelve la URL
+ * firmada de subida (PUT); sin R2 configurado es null (dev, igual que
+ * documentos). El registro en `persons.photo_url` recién se hace en
+ * `confirmarFoto`, después de que el navegador terminó el PUT.
+ */
+export async function iniciarSubidaFoto(
+  clubSlug: string,
+  input: unknown,
+): Promise<ActionResult<{ key: string; uploadUrl: string | null }>> {
+  const parsed = fotoSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+
+  try {
+    const ctx = await requirePermission('notificaciones.ver', { kind: 'club' }, clubSlug)
+    const key = generarFotoKey(ctx.clubId, ctx.personId, EXT_POR_MIME[parsed.data.mimeType])
+    const uploadUrl = await firmarUrlSubida(key, parsed.data.mimeType)
+    return { ok: true, data: { key, uploadUrl } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo iniciar la subida.' }
+  }
+}
+
+/** Confirma la foto ya subida a R2: guarda `r2:<key>` y borra la anterior (best-effort). */
+export async function confirmarFoto(clubSlug: string, key: string): Promise<ActionResult<null>> {
+  if (typeof key !== 'string' || !key.startsWith(`avatars/`)) {
+    return { ok: false, error: 'Clave de archivo inválida.' }
+  }
+  try {
+    const ctx = await requirePermission('notificaciones.ver', { kind: 'club' }, clubSlug)
+    const anterior = await withTenant(
+      ctx.clubId,
+      async ({ tx }) => {
+        const { rows } = await tx.execute<{ photo_url: string | null }>(sql`
+          SELECT photo_url FROM persons WHERE id = ${ctx.personId} AND club_id = ${ctx.clubId}
+        `)
+        const previa = rows[0]?.photo_url ?? null
+        await tx.execute(sql`
+          UPDATE persons SET photo_url = ${`r2:${key}`}
+          WHERE id = ${ctx.personId} AND club_id = ${ctx.clubId}
+        `)
+        return previa
+      },
+      { userId: ctx.userId },
+    )
+    if (anterior?.startsWith('r2:')) await borrarObjeto(anterior.slice(3))
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo guardar la foto.' }
+  }
+}
+
+/** Quita la foto de perfil del propio socio (vuelve a mostrar las iniciales). */
+export async function quitarFoto(clubSlug: string): Promise<ActionResult<null>> {
+  try {
+    const ctx = await requirePermission('notificaciones.ver', { kind: 'club' }, clubSlug)
+    const anterior = await withTenant(
+      ctx.clubId,
+      async ({ tx }) => {
+        const { rows } = await tx.execute<{ photo_url: string | null }>(sql`
+          SELECT photo_url FROM persons WHERE id = ${ctx.personId} AND club_id = ${ctx.clubId}
+        `)
+        const previa = rows[0]?.photo_url ?? null
+        await tx.execute(sql`
+          UPDATE persons SET photo_url = NULL WHERE id = ${ctx.personId} AND club_id = ${ctx.clubId}
+        `)
+        return previa
+      },
+      { userId: ctx.userId },
+    )
+    if (anterior?.startsWith('r2:')) await borrarObjeto(anterior.slice(3))
+    return { ok: true, data: null }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'No se pudo quitar la foto.' }
   }
 }

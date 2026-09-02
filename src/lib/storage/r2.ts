@@ -65,6 +65,27 @@ export async function firmarUrlDescarga(key: string): Promise<string | null> {
   )
 }
 
+/**
+ * Foto de perfil (M16): misma key privada de R2, no un bucket público.
+ * `persons.photo_url` guarda `r2:<key>` cuando la subió el propio socio
+ * (subida self-service, portal) — se resuelve a una URL firmada de
+ * descarga fresca en cada lectura, igual que `downloadUrl` en
+ * listarDocumentosTx. Si el valor no tiene ese prefijo es una URL externa
+ * cargada a mano por staff (comportamiento previo, sin tocar): se
+ * devuelve tal cual.
+ */
+export function generarFotoKey(clubId: string, personId: string, ext: string): string {
+  const limpio = ext.replace(/[^a-z0-9.]/gi, '').toLowerCase()
+  const sufijo = limpio.startsWith('.') ? limpio : `.${limpio || 'jpg'}`
+  return `avatars/${clubId}/${personId}/${crypto.randomUUID()}${sufijo}`
+}
+
+export async function resolverFotoUrl(photoUrl: string | null): Promise<string | null> {
+  if (!photoUrl) return null
+  if (!photoUrl.startsWith('r2:')) return photoUrl
+  return firmarUrlDescarga(photoUrl.slice(3))
+}
+
 /** Borra el objeto. Tolerante: sin R2 o ante error solo loguea (best-effort). */
 export async function borrarObjeto(key: string): Promise<void> {
   if (!r2Configurado()) {

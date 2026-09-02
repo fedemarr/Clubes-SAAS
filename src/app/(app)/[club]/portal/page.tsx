@@ -18,6 +18,7 @@ import { datosPortal, type CuentaPortal } from '@/modules/portal/queries'
 import { listarBeneficios } from '@/modules/beneficios/queries'
 import { PagoPortalButton } from '@/modules/portal/components/PagoPortalButton'
 import { CredencialAcceso } from '@/modules/portal/components/CredencialAcceso'
+import { AvatarFoto } from '@/modules/portal/components/AvatarFoto'
 import { SemaforoBadge, semaforoCuenta, semaforoFamilia } from '@/modules/portal/components/semaforo'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -134,14 +135,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
         }}
       >
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/15 text-3xl font-bold ring-1 ring-white/30">
-            {p.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.photoUrl} alt="" className="size-full object-cover" />
-            ) : (
-              iniciales
-            )}
-          </div>
+          <AvatarFoto clubSlug={slug} photoUrl={p.photoUrl} iniciales={iniciales} size="lg" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-2xl font-semibold tracking-tight">
               {p.firstName} {p.lastName}
@@ -197,7 +191,7 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
               <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">
                 <CreditCard className="size-4 text-primary" />
                 Débito automático
-                <span className="rounded-full bg-green-600/15 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                <span className="rounded-full bg-green-600/15 px-2 py-0.5 text-[11px] font-semibold text-green-700 dark:text-green-300">
                   Activo
                 </span>
               </p>

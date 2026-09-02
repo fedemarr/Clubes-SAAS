@@ -6,6 +6,7 @@ import { clubs } from '@/db/schema'
 import { rolesEnClub } from '@/lib/permissions'
 import { datosCarnet } from '@/modules/portal/queries'
 import { QrCarnet } from '@/modules/portal/components/QrCarnet'
+import { AvatarFoto } from '@/modules/portal/components/AvatarFoto'
 import { Badge } from '@/components/ui/badge'
 
 export const dynamic = 'force-dynamic'
@@ -66,12 +67,16 @@ export default async function CarnetPage({ params }: { params: Promise<{ club: s
           }}
         >
           {club.logoUrl && (
+            // Escudo grande centrado como fondo de toda la card (estilo
+            // gift card): antes era chico y arrinconado arriba a la
+            // derecha, ahora ocupa casi toda la superficie detrás del
+            // contenido, bien tenue para no restarle legibilidad al texto.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={club.logoUrl}
               alt=""
               aria-hidden
-              className="pointer-events-none absolute -top-6 -right-9 h-44 w-auto opacity-10"
+              className="pointer-events-none absolute top-1/2 left-1/2 h-[95%] w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.16]"
             />
           )}
 
@@ -86,14 +91,7 @@ export default async function CarnetPage({ params }: { params: Promise<{ club: s
 
           <div className="relative grid gap-5 px-5 pb-5 sm:grid-cols-[1fr_auto]">
             <div className="flex items-center gap-4">
-              <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/15 text-2xl font-bold ring-1 ring-white/30">
-                {p.photoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.photoUrl} alt="" className="size-full object-cover" />
-                ) : (
-                  iniciales
-                )}
-              </div>
+              <AvatarFoto clubSlug={slug} photoUrl={p.photoUrl} iniciales={iniciales} size="md" />
               <div className="min-w-0">
                 <p className="truncate text-xl font-semibold tracking-tight">
                   {p.firstName} {p.lastName}

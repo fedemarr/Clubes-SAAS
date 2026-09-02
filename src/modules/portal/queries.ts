@@ -15,6 +15,7 @@ import {
 import type { eventKind, chargeStatus } from '@/db/schema'
 import { decimalToCents } from '@/lib/money'
 import { listarDocumentosTx, type DocumentoItem } from '@/modules/documentos/queries'
+import { resolverFotoUrl } from '@/lib/storage/r2'
 
 /**
  * Portal del socio (M6). Las queries acá NO exigen permisos de staff: el
@@ -140,6 +141,7 @@ export async function datosPortal(clubId: string, memberPersonId: string): Promi
         cuotaPlan: null,
       }
     }
+    persona.photoUrl = await resolverFotoUrl(persona.photoUrl)
 
     const personIds = await personasDelMiembroTx(tx, clubId, memberPersonId)
     const hoy = new Date().toISOString().slice(0, 10)
@@ -340,6 +342,7 @@ export async function datosCarnet(clubId: string, memberPersonId: string): Promi
         cuentaLabel: null,
       }
     }
+    persona.photoUrl = await resolverFotoUrl(persona.photoUrl)
 
     const hoy = new Date().toISOString().slice(0, 10)
 

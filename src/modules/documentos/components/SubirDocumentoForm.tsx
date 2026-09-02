@@ -187,7 +187,7 @@ export function SubirDocumentoForm({
         />
         {limpiando && <p className="text-xs text-muted-foreground">Limpiando metadatos de la imagen…</p>}
         {metaStripped && (
-          <p className="text-xs text-emerald-700">
+          <p className="text-xs text-emerald-700 dark:text-emerald-300">
             Se quitaron los metadatos de la imagen (EXIF) antes de subir.
           </p>
         )}

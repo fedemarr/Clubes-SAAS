@@ -27,11 +27,16 @@ export function semaforoCuenta(cuenta: CuentaPortal) {
   return { tono: 'verde' as const, label: 'Al día' }
 }
 
+// Texto en clases de Tailwind (no hex fijo): el portal puede renderizarse en
+// modo oscuro (club.branding.portalTheme === 'dark', clase "dark" en un
+// ancestro — ver layout de [club]) y los tonos *-700 quedan casi invisibles
+// sobre el fondo casi negro. dark:* (definido como `.dark *` en
+// globals.css) resuelve un tono más claro ahí sin tocar el caso claro.
 const ESTILOS: Record<TonoSemaforo, { bg: string; text: string }> = {
-  verde: { bg: 'rgba(34,197,94,0.14)', text: '#15803D' },
-  amarillo: { bg: 'rgba(251,191,36,0.18)', text: '#B45309' },
-  rojo: { bg: 'rgba(239,68,68,0.12)', text: '#B91C1C' },
-  gris: { bg: 'rgba(107,114,128,0.14)', text: '#4B5563' },
+  verde: { bg: 'bg-green-500/15', text: 'text-green-700 dark:text-green-300' },
+  amarillo: { bg: 'bg-amber-400/20', text: 'text-amber-700 dark:text-amber-300' },
+  rojo: { bg: 'bg-red-500/15', text: 'text-red-700 dark:text-red-300' },
+  gris: { bg: 'bg-gray-500/15', text: 'text-gray-600 dark:text-gray-300' },
 }
 
 export function SemaforoBadge({
@@ -45,13 +50,12 @@ export function SemaforoBadge({
   className?: string
   sobreFondoColor?: boolean
 }) {
-  const sobreColor = sobreFondoColor ? { bg: 'rgba(255,255,255,0.16)', text: '#FFFFFF' } : ESTILOS[tono]
+  const sobreColor = sobreFondoColor ? { bg: 'bg-white/16', text: 'text-white' } : ESTILOS[tono]
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${sobreFondoColor ? 'ring-white/25' : 'ring-transparent'} ${className ?? ''}`}
-      style={{ backgroundColor: sobreColor.bg, color: sobreColor.text }}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${sobreFondoColor ? 'ring-white/25' : 'ring-transparent'} ${sobreColor.bg} ${sobreColor.text} ${className ?? ''}`}
     >
-      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: sobreColor.text }} />
+      <span className="size-2 shrink-0 rounded-full bg-current" />
       {label}
     </span>
   )
