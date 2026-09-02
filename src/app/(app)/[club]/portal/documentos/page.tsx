@@ -76,7 +76,7 @@ export default async function PortalDocumentosPage({ params }: { params: Promise
                   <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{d.tipoLabel ?? d.kind}</p>
+                        <p className="text-sm font-medium dark:text-white">{d.tipoLabel ?? d.kind}</p>
                         <EstadoDocumentoBadge status={d.status} />
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">

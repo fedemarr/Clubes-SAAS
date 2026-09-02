@@ -141,7 +141,7 @@ export function SubirDocumentoForm({
 
   return (
     <form onSubmit={onSubmit} className="grid gap-3 rounded-xl border bg-card p-5 shadow-sm">
-      <p className="text-sm font-semibold tracking-tight">{label}</p>
+      <p className="text-sm font-semibold tracking-tight dark:text-white">{label}</p>
 
       {showPersona && (
         <div className="grid gap-1.5">
