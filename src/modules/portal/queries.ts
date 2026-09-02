@@ -141,76 +141,37 @@ export async function datosPortal(clubId: string, memberPersonId: string): Promi
         cuotaPlan: null,
       }
     }
-    persona.photoUrl = await resolverFotoUrl(persona.photoUrl)
-
-    const personIds = await personasDelMiembroTx(tx, clubId, memberPersonId)
     const hoy = new Date().toISOString().slice(0, 10)
 
-    const membresias = await tx
-      .select({ accountId: memberships.accountId })
-      .from(memberships)
-      .where(
-        and(
-          eq(memberships.clubId, clubId),
-          inArray(memberships.personId, personIds),
-          eq(memberships.status, 'activa'),
-        ),
-      )
-    const cuentasHolder = await tx
-      .select({ id: accounts.id, label: accounts.label })
-      .from(accounts)
-      .where(and(eq(accounts.clubId, clubId), inArray(accounts.holderPersonId, personIds), isNull(accounts.deletedAt)))
+    // Antes esto era ~5 queries secuenciales + 3 MÁS POR CADA cuenta del
+    // grupo familiar (un select por cuenta, uno a account_balances, uno a
+    // charges — un N+1 clásico: con 2-3 cuentas eran 10+ round trips solo
+    // para esta sección). Ahora: personIds primero (todo lo demás depende
+    // de él), después TODO lo que solo depende de personIds/memberPersonId
+    // en paralelo (Promise.all no evita que Postgres las procese una por
+    // una en la misma conexión, pero tampoco cuesta nada — y si el driver
+    // en algún momento pipelinea, esto ya está listo), y el detalle de
+    // cuentas (info + saldo + cargos) en 3 queries BATCH con IN (...) en
+    // vez de un loop, sin importar cuántas cuentas tenga la familia.
+    const personIds = await personasDelMiembroTx(tx, clubId, memberPersonId)
+    persona.photoUrl = await resolverFotoUrl(persona.photoUrl)
 
-    const accountIds = [...new Set([...membresias.map((m) => m.accountId), ...cuentasHolder.map((c) => c.id)])]
-
-    const cuentas: CuentaPortal[] = []
-    for (const accountId of accountIds) {
-      const [cuenta] = await tx
-        .select({
-          id: accounts.id,
-          label: accounts.label,
-          holderNombre: persons.firstName,
-          holderApellido: persons.lastName,
-        })
-        .from(accounts)
-        .innerJoin(persons, eq(persons.id, accounts.holderPersonId))
-        .where(eq(accounts.id, accountId))
-        .limit(1)
-      if (!cuenta) continue
-
-      const saldos = await tx.execute<{ balance: string }>(
-        sql`SELECT balance FROM account_balances WHERE account_id = ${accountId}`,
-      )
-      const cargosRaw = await tx
-        .select()
-        .from(charges)
+    const [membresias, cuentasHolder, teamIds, categorias, plan] = await Promise.all([
+      tx
+        .select({ accountId: memberships.accountId })
+        .from(memberships)
         .where(
           and(
-            eq(charges.clubId, clubId),
-            eq(charges.accountId, accountId),
-            inArray(charges.status, ['pendiente', 'parcial', 'vencido']),
+            eq(memberships.clubId, clubId),
+            inArray(memberships.personId, personIds),
+            eq(memberships.status, 'activa'),
           ),
-        )
-        .orderBy(asc(charges.dueOn))
-
-      cuentas.push({
-        accountId,
-        label: cuenta.label,
-        holderNombre: `${cuenta.holderNombre} ${cuenta.holderApellido}`,
-        balanceCents: decimalToCents(saldos.rows[0]?.balance ?? '0'),
-        cargos: cargosRaw.map((c) => ({
-          id: c.id,
-          concept: c.concept,
-          period: c.period,
-          status: c.status,
-          dueOn: c.dueOn,
-          amountCents: decimalToCents(c.amount),
-        })),
-      })
-    }
-
-    const teamIds = (
-      await tx
+        ),
+      tx
+        .select({ id: accounts.id, label: accounts.label })
+        .from(accounts)
+        .where(and(eq(accounts.clubId, clubId), inArray(accounts.holderPersonId, personIds), isNull(accounts.deletedAt))),
+      tx
         .select({ teamId: teamMembers.teamId })
         .from(teamMembers)
         .where(
@@ -220,7 +181,92 @@ export async function datosPortal(clubId: string, memberPersonId: string): Promi
             or(isNull(teamMembers.validTo), gte(teamMembers.validTo, hoy)),
           ),
         )
-    ).map((t) => t.teamId)
+        .then((rows) => rows.map((t) => t.teamId)),
+      tx
+        .select({ teamId: teams.id, label: teams.label, sport: teams.sport })
+        .from(teamMembers)
+        .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+        .where(
+          and(
+            eq(teamMembers.clubId, clubId),
+            eq(teamMembers.personId, memberPersonId),
+            or(isNull(teamMembers.validTo), gte(teamMembers.validTo, hoy)),
+          ),
+        ),
+      tx
+        .select({ planNombre: feePlans.name, monto: feePlans.amount })
+        .from(memberships)
+        .innerJoin(feePlans, eq(feePlans.id, memberships.feePlanId))
+        .where(
+          and(
+            eq(memberships.clubId, clubId),
+            eq(memberships.personId, memberPersonId),
+            eq(memberships.status, 'activa'),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]),
+    ])
+
+    const accountIds = [...new Set([...membresias.map((m) => m.accountId), ...cuentasHolder.map((c) => c.id)])]
+
+    let cuentas: CuentaPortal[] = []
+    if (accountIds.length > 0) {
+      const [cuentasInfo, saldos, cargosRaw] = await Promise.all([
+        tx
+          .select({
+            id: accounts.id,
+            label: accounts.label,
+            holderNombre: persons.firstName,
+            holderApellido: persons.lastName,
+          })
+          .from(accounts)
+          .innerJoin(persons, eq(persons.id, accounts.holderPersonId))
+          .where(inArray(accounts.id, accountIds)),
+        tx.execute<{ account_id: string; balance: string }>(
+          sql`SELECT account_id, balance FROM account_balances WHERE account_id IN (${sql.join(accountIds, sql`, `)})`,
+        ),
+        tx
+          .select()
+          .from(charges)
+          .where(
+            and(
+              eq(charges.clubId, clubId),
+              inArray(charges.accountId, accountIds),
+              inArray(charges.status, ['pendiente', 'parcial', 'vencido']),
+            ),
+          )
+          .orderBy(asc(charges.dueOn)),
+      ])
+      const saldoPorCuenta = new Map(saldos.rows.map((r) => [r.account_id, r.balance]))
+      const cargosPorCuenta = new Map<string, typeof cargosRaw>()
+      for (const c of cargosRaw) {
+        const lista = cargosPorCuenta.get(c.accountId) ?? []
+        lista.push(c)
+        cargosPorCuenta.set(c.accountId, lista)
+      }
+
+      cuentas = accountIds
+        .map((accountId) => {
+          const cuenta = cuentasInfo.find((c) => c.id === accountId)
+          if (!cuenta) return null
+          return {
+            accountId,
+            label: cuenta.label,
+            holderNombre: `${cuenta.holderNombre} ${cuenta.holderApellido}`,
+            balanceCents: decimalToCents(saldoPorCuenta.get(accountId) ?? '0'),
+            cargos: (cargosPorCuenta.get(accountId) ?? []).map((c) => ({
+              id: c.id,
+              concept: c.concept,
+              period: c.period,
+              status: c.status,
+              dueOn: c.dueOn,
+              amountCents: decimalToCents(c.amount),
+            })),
+          }
+        })
+        .filter((c): c is CuentaPortal => c !== null)
+    }
 
     let proximoEvento: EventoPortal | null = null
     if (teamIds.length > 0) {
@@ -250,31 +296,6 @@ export async function datosPortal(clubId: string, memberPersonId: string): Promi
         .limit(1)
       proximoEvento = evento ?? null
     }
-
-    const categorias = await tx
-      .select({ teamId: teams.id, label: teams.label, sport: teams.sport })
-      .from(teamMembers)
-      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
-      .where(
-        and(
-          eq(teamMembers.clubId, clubId),
-          eq(teamMembers.personId, memberPersonId),
-          or(isNull(teamMembers.validTo), gte(teamMembers.validTo, hoy)),
-        ),
-      )
-
-    const [plan] = await tx
-      .select({ planNombre: feePlans.name, monto: feePlans.amount })
-      .from(memberships)
-      .innerJoin(feePlans, eq(feePlans.id, memberships.feePlanId))
-      .where(
-        and(
-          eq(memberships.clubId, clubId),
-          eq(memberships.personId, memberPersonId),
-          eq(memberships.status, 'activa'),
-        ),
-      )
-      .limit(1)
 
     return {
       persona,

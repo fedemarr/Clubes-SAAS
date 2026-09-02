@@ -1,4 +1,3 @@
-import { and, eq, isNull } from 'drizzle-orm'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
@@ -10,8 +9,7 @@ import {
   Trophy,
   Wallet,
 } from 'lucide-react'
-import { db } from '@/db/client'
-import { clubs } from '@/db/schema'
+import { obtenerClubPorSlug } from '@/lib/club'
 import { rolesEnClub } from '@/lib/permissions'
 import { formatARS } from '@/lib/money'
 import { datosPortal, type CuentaPortal } from '@/modules/portal/queries'
@@ -109,15 +107,13 @@ export default async function PortalHomePage({ params }: { params: Promise<{ clu
   const ctx = await rolesEnClub(slug)
   if (!ctx) redirect('/')
 
-  const [club] = await db
-    .select()
-    .from(clubs)
-    .where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt)))
-    .limit(1)
+  const club = await obtenerClubPorSlug(slug)
   if (!club) redirect('/')
 
-  const datos = await datosPortal(ctx.clubId, ctx.personId)
-  const beneficios = await listarBeneficios(ctx.clubId)
+  const [datos, beneficios] = await Promise.all([
+    datosPortal(ctx.clubId, ctx.personId),
+    listarBeneficios(ctx.clubId),
+  ])
   const estadoCta = semaforoFamilia(datos.cuentas)
   const primary = club.branding?.primary ?? '#111827'
   const p = datos.persona

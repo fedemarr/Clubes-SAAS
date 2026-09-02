@@ -1,8 +1,6 @@
-import { and, eq, isNull } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { FileText } from 'lucide-react'
-import { db } from '@/db/client'
-import { clubs } from '@/db/schema'
+import { obtenerClubPorSlug } from '@/lib/club'
 import { rolesEnClub } from '@/lib/permissions'
 import { grupoFamiliar, misDocumentos } from '@/modules/portal/queries'
 import { iniciarSubidaDocumento } from '@/modules/portal/actions'
@@ -28,11 +26,7 @@ export default async function PortalDocumentosPage({ params }: { params: Promise
   const ctx = await rolesEnClub(slug)
   if (!ctx) redirect('/')
 
-  const [club] = await db
-    .select()
-    .from(clubs)
-    .where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt)))
-    .limit(1)
+  const club = await obtenerClubPorSlug(slug)
   if (!club) redirect('/')
 
   const [docs, tipos, grupo] = await Promise.all([

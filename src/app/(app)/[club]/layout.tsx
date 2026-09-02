@@ -1,8 +1,7 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { db } from '@/db/client'
-import { clubs } from '@/db/schema'
+import { obtenerClubPorSlug } from '@/lib/club'
 import { withTenant } from '@/db/tenant'
 import { auth } from '@/lib/auth/config'
 import { checkPermission } from '@/lib/permissions'
@@ -82,12 +81,10 @@ export default async function ClubLayout({
   }
 
   // clubs no tiene club_id (es la tabla raíz del tenant): no lleva RLS,
-  // se puede leer directo sin pasar por withTenant().
-  const [club] = await db
-    .select()
-    .from(clubs)
-    .where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt)))
-    .limit(1)
+  // se puede leer directo sin pasar por withTenant(). cache()-eada por
+  // request: cada página hija pide lo mismo y no vuelve a pegarle a la
+  // base (ver src/lib/club.ts).
+  const club = await obtenerClubPorSlug(slug)
 
   if (!club) {
     notFound()

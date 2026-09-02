@@ -1,8 +1,6 @@
-import { and, eq, isNull } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { BadgeCheck, ChevronRight, Hash, IdCard, ShoppingBag, Trophy } from 'lucide-react'
-import { db } from '@/db/client'
-import { clubs } from '@/db/schema'
+import { obtenerClubPorSlug } from '@/lib/club'
 import { rolesEnClub } from '@/lib/permissions'
 import { datosCarnet } from '@/modules/portal/queries'
 import { QrCarnet } from '@/modules/portal/components/QrCarnet'
@@ -24,11 +22,7 @@ export default async function CarnetPage({ params }: { params: Promise<{ club: s
   const ctx = await rolesEnClub(slug)
   if (!ctx) redirect('/')
 
-  const [club] = await db
-    .select()
-    .from(clubs)
-    .where(and(eq(clubs.slug, slug), isNull(clubs.deletedAt)))
-    .limit(1)
+  const club = await obtenerClubPorSlug(slug)
   if (!club) redirect('/')
 
   const datos = await datosCarnet(ctx.clubId, ctx.personId)
