@@ -90,14 +90,25 @@ export function AvatarFoto({
       return setError(r.error)
     }
     if (r.data.uploadUrl) {
-      const up = await fetch(r.data.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': limpia.type },
-        body: limpia,
-      })
-      if (!up.ok) {
+      // El PUT directo al bucket puede fallar por red o por CORS del lado
+      // de R2 (rechaza el preflight silenciosamente, fetch tira una
+      // excepción, no una respuesta con !ok) — antes eso quedaba como una
+      // promesa rechazada sin capturar: la UI se quedaba con el spinner
+      // trabado y, al refrescar, la foto nunca se había confirmado. Ahora
+      // se atrapa y se muestra un error real.
+      try {
+        const up = await fetch(r.data.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': limpia.type },
+          body: limpia,
+        })
+        if (!up.ok) {
+          setSubiendo(false)
+          return setError('No se pudo subir la foto. Volvé a intentar.')
+        }
+      } catch {
         setSubiendo(false)
-        return setError('No se pudo subir la foto. Volvé a intentar.')
+        return setError('No se pudo conectar con el almacenamiento. Volvé a intentar en un rato.')
       }
     }
     const c = await confirmarFoto(clubSlug, r.data.key)
